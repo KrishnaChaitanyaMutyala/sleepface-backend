@@ -1,0 +1,182 @@
+[
+  {
+    "date": "2025-09-17",
+    "sleep_score": 73,
+    "skin_health_score": 48,
+    "features": {
+      "dark_circles": 54.5,
+      "puffiness": 83.13626292900994,
+      "brightness": 89.32304948849449,
+      "wrinkles": 0.0,
+      "texture": 85.65382850651676,
+      "pore_size": 0.0
+    },
+    "routine": {},
+    "timestamp": "2025-09-17T18:16:07.798596"
+  },
+  {
+    "date": "2025-09-17",
+    "sleep_score": 50,
+    "skin_health_score": 65,
+    "features": {
+      "dark_circles": 30.0,
+      "puffiness": 80.0,
+      "brightness": 48.9,
+      "wrinkles": 56.7,
+      "texture": 85.0,
+      "pore_size": 80.0
+    },
+    "routine": {},
+    "timestamp": "2025-09-17T18:17:43.267649"
+  },
+  {
+    "date": "2025-09-17",
+    "sleep_score": 50,
+    "skin_health_score": 64,
+    "features": {
+      "dark_circles": 30.0,
+      "puffiness": 80.0,
+      "brightness": 47.4,
+      "wrinkles": 53.5,
+      "texture": 85.0,
+      "pore_size": 80.0
+    },
+    "routine": {},
+    "timestamp": "2025-09-17T18:33:08.230375"
+  },
+  {
+    "date": "2025-09-17",
+    "sleep_score": 50,
+    "skin_health_score": 65,
+    "features": {
+      "dark_circles": 30.0,
+      "puffiness": 80.0,
+      "brightness": 49.6,
+      "wrinkles": 55.9,
+      "texture": 85.0,
+      "pore_size": 80.0
+    },
+    "routine": {},
+    "timestamp": "2025-09-17T18:44:21.892423"
+  },
+  {
+    "date": "2025-09-17",
+    "sleep_score": 49,
+    "skin_health_score": 63,
+    "features": {
+      "dark_circles": 30.0,
+      "puffiness": 80.0,
+      "brightness": 46.1,
+      "wrinkles": 51.5,
+      "texture": 85.0,
+      "pore_size": 80.0
+    },
+    "routine": {},
+    "timestamp": "2025-09-17T19:21:44.335205"
+  },
+  {
+    "date": "2025-09-17",
+    "sleep_score": 49,
+    "skin_health_score": 67,
+    "features": {
+      "dark_circles": 30.0,
+      "puffiness": 80.0,
+      "brightness": 46.2,
+      "wrinkles": 73.1,
+      "texture": 85.0,
+      "pore_size": 80.0
+    },
+    "routine": {},
+    "timestamp": "2025-09-17T19:24:04.883515"
+  },
+  {
+    "date": "2025-09-17",
+    "sleep_score": 76,
+    "skin_health_score": 83,
+    "features": {
+      "dark_circles": 72.3,
+      "puffiness": 85.0,
+      "brightness": 73.0,
+      "wrinkles": 90.0,
+      "texture": 90.0,
+      "pore_size": 84.2
+    },
+    "routine": {},
+    "timestamp": "2025-09-17T19:41:21.868299"
+  },
+  {
+    "date": "2025-10-14",
+    "sleep_score": 83,
+    "skin_health_score": 85,
+    "features": {
+      "dark_circles": 76.1,
+      "puffiness": 85.0,
+      "brightness": 90.8,
+      "wrinkles": 90.0,
+      "texture": 90.0,
+      "pore_size": 75.1
+    },
+    "routine": {},
+    "timestamp": "2025-10-14T07:32:45.413900"
+  },
+  {
+    "date": "2025-10-14",
+    "sleep_score": 69,
+    "skin_health_score": 80,
+    "features": {
+      "dark_circles": 63.0,
+      "puffiness": 81.5,
+      "brightness": 66.2,
+      "wrinkles": 90.0,
+      "texture": 90.0,
+      "pore_size": 82.2
+    },
+    "routine": {},
+    "timestamp": "2025-10-14T07:35:59.215692"
+  },
+  {
+    "date": "2025-10-14",
+    "sleep_score": 80,
+    "skin_health_score": 87,
+    "features": {
+      "dark_circles": 66.0,
+      "puffiness": 85.0,
+      "brightness": 95.0,
+      "wrinkles": 90.0,
+      "texture": 90.0,
+      "pore_size": 85.0
+    },
+    "routine": {},
+    "timestamp": "2025-10-14T13:52:56.869274"
+  },
+  {
+    "date": "2025-10-14",
+    "sleep_score": 82,
+    "skin_health_score": 87,
+    "features": {
+      "dark_circles": 71.2,
+      "puffiness": 85.0,
+      "brightness": 95.0,
+      "wrinkles": 90.0,
+      "texture": 90.0,
+      "pore_size": 85.0
+    },
+    "routine": {},
+    "timestamp": "2025-10-14T14:01:04.723320"
+  },
+  {
+    "date": "2025-10-16",
+    "sleep_score": 84,
+    "skin_health_score": 85,
+    "features": {
+      "dark_circles": 80.5,
+      "puffiness": 85.0,
+      "brightness": 87.7,
+      "wrinkles": 90.0,
+      "texture": 90.0,
+      "pore_size": 75.1
+    },
+    "routine": {},
+    "timestamp": "2025-10-16T08:16:03.620514"
+  }
+]

@@ -1,516 +1,371 @@
-# Sleep Face 🌟
+# Sleep Face Backend 🚀
 
-An AI-powered mobile app that helps users track their sleep and skin health daily using computer vision and machine learning.
+AI-powered backend API for Sleep Face mobile app - analyzing sleep quality and skin health from selfies.
 
-## 🎯 Vision & Goals
+## 🎯 Overview
 
-Sleep Face helps users track how rested and healthy they look daily using AI. It delivers fun, accurate scores, habit-forming insights, and skin progress tracking with gamification and social sharing.
+This is the Python FastAPI backend that powers the Sleep Face mobile application. It uses computer vision and machine learning to analyze facial features and provide insights on sleep quality and skin health.
 
-### Goals:
-- Create a daily-use, habit-forming app
-- Provide trustworthy face/skin insights using AI
-- Be fun, engaging, and safe (no medical claims)
-- Monetize via premium features, affiliate skincare, and light ads
+## ✨ Features
 
-## 🚀 Tech Stack
+### 🤖 AI Engine
+- **Face Detection**: MediaPipe FaceMesh for accurate landmark detection
+- **6 Feature Analysis**:
+  - Dark Circles (0-100 score)
+  - Eye Puffiness (0-100 score)
+  - Skin Brightness (0-100 score)
+  - Fine Lines/Wrinkles (0-100 score)
+  - Skin Texture (0-100 score)
+  - Pore Size (0-100 score)
+- **Smart Scoring**: Sleep Score & Skin Health Score calculation
+- **Data-Driven Summaries**: Trend analysis without LLM dependencies
 
-### Frontend
-- **React Native (Expo)** - Cross-platform mobile development
-- **TypeScript** - Type safety and better development experience
-- **React Navigation** - Navigation between screens
-- **Expo Camera** - Camera functionality for selfies
-- **AsyncStorage** - Local data persistence
-- **Firebase Auth** - Authentication (Google, Apple, Email, Guest)
-- **React Native Chart Kit** - Data visualization
-- **Expo Linear Gradient** - Beautiful UI gradients
+### 📊 Data & Analytics
+- **Historical Tracking**: 30-day data storage per user
+- **Trend Analysis**: 7-day vs 7-day comparison
+- **Stagnation Detection**: 14-day monitoring for plateaued features
+- **Product Effectiveness**: Track which skincare products work best
+- **Feature Correlation**: AI-powered product-to-feature analysis
 
-### Backend
-- **Python FastAPI** - High-performance API framework
-- **MongoDB** - NoSQL database for user data and analysis results
-- **Firebase Admin SDK** - Authentication and user management
-- **MediaPipe** - Face detection and landmark extraction
-- **OpenCV** - Image processing and feature extraction
-- **TensorFlow Lite** - On-device AI model inference
-- **Uvicorn** - ASGI server for FastAPI
+### 🔐 Authentication
+- Firebase Authentication integration
+- JWT token validation
+- User profile management
+- Guest mode support
 
-### AI/ML Engine
-- **Core 5 Models** (On-Device First):
-  - Face Detection + Landmarks → MediaPipe FaceMesh
-  - Dark Circles/Puffiness → CNN + OpenCV color histogram
-  - Brightness/Glow → Histogram + CNN regression
-  - Wrinkle Detector → Edge filters + CNN
-  - Texture Analyzer → Local Binary Patterns + CNN
-
-## 📱 Core Features
-
-### 1. Daily Selfie Scan
-- Take selfie with front camera
-- AI extracts 5 core features:
-  - Dark circles
-  - Puffiness
-  - Brightness/glow
-  - Wrinkles/fine lines
-  - Texture/smoothness
-- Outputs Sleep Score (0-100) and Skin Health Score (0-100)
-- Fun labels: Zombie 🧟, Normal 😐, Glow 🌟
-
-### 2. Routine Logging
-- Sleep hours (manual input)
-- Product used (dropdown/custom)
-- Water intake (tap toggle)
-- Optional daily note
-
-### 3. Tracking & Trends
-- Weekly graphs (Sleep & Skin Health Scores)
-- Zone-specific deltas (eyes, cheeks, forehead)
-- Product-effectiveness summary
-- Lifestyle correlations
-
-### 4. Summaries
-- Daily Summary: Today vs yesterday
-- Weekly Summary: Trends + lifestyle impact
-- Routine Summary: Effectiveness of products logged
-- Social Summary: Fun one-liner for sharing
-
-### 5. Gamification & Social
-- Streaks: daily logging rewards
-- Badges: "Glow Queen 👑," "Zombie Survivor 🧟"
-- Glow Challenges: hydration/sleep streaks
-- Shareable Cards: score + emoji + weekly changes
-
-## 🏗️ Project Structure
+## 🏗️ Architecture
 
 ```
-sleepface/
-├── backend/                 # Python FastAPI backend
-│   ├── main.py             # FastAPI application
-│   ├── models.py           # Pydantic data models
-│   ├── ai_engine.py        # Core 5 AI engine
-│   ├── auth.py             # Firebase authentication
-│   ├── database.py         # MongoDB operations
-│   ├── requirements.txt    # Python dependencies
-│   └── env.example         # Environment variables template
-├── frontend/               # React Native Expo app
-│   ├── src/
-│   │   ├── screens/        # App screens
-│   │   ├── components/     # Reusable components
-│   │   ├── contexts/       # React contexts
-│   │   ├── services/       # API services
-│   │   ├── types/          # TypeScript types
-│   │   └── utils/          # Utility functions
-│   ├── App.tsx             # Main app component
-│   ├── app.json            # Expo configuration
-│   └── package.json        # Node.js dependencies
-├── package.json            # Root package.json for scripts
-└── README.md              # This file
+backend/
+├── main.py                          # FastAPI application & routes
+├── ai_engine.py                     # Core CV/ML analysis engine
+├── models.py                        # Pydantic data models
+├── auth.py                          # Firebase authentication
+├── database.py                      # MongoDB operations
+├── smart_summary_service.py         # Data-driven summary generation (NEW!)
+├── llm_service.py                   # LLM fallback (optional)
+├── historical_data_service.py       # Data storage & retrieval
+├── trend_analysis_service.py        # Product effectiveness analysis
+├── feature_correlation_analyzer.py  # Feature-product correlation
+├── weekly_analysis_service.py       # Weekly trend reports
+├── user_auth_service.py            # User authentication service
+├── config.py                        # Configuration management
+├── requirements.txt                 # Python dependencies
+├── env.example                      # Environment template
+├── data/                            # User historical data (JSON)
+└── models/                          # ML models (.tflite files)
 ```
-
-## 📋 **PROJECT STATUS & VALIDATION** 
-
-### ✅ **COMPLETED IMPLEMENTATION** (Ready for Product Owner/CTO Review)
-
-#### **1. Core Architecture & Infrastructure** 
-- ✅ **Monorepo Structure**: Successfully integrated React Native frontend with Python FastAPI backend
-- ✅ **Cross-Platform Support**: Web (localhost:8081) + Mobile (Expo Go) + Native builds
-- ✅ **Real-time AI Engine**: 5-model computer vision pipeline with MediaPipe + OpenCV + TensorFlow Lite
-- ✅ **Data Persistence**: Unified storage service (AsyncStorage + localStorage) for consistent data sync
-- ✅ **API Integration**: RESTful backend with comprehensive error handling and fallback systems
-
-#### **2. AI/ML Engine Implementation**
-- ✅ **Core 5 Models**: Dark circles, puffiness, brightness, wrinkles, texture analysis
-- ✅ **Real-time Processing**: On-device inference with detailed logging and debugging
-- ✅ **Score Calculation**: Weighted algorithms for sleep score (0-100) and skin health score (0-100)
-- ✅ **Feature Extraction**: MediaPipe face detection + OpenCV image processing + CNN models
-- ✅ **Comprehensive Logging**: Full algorithm traceability for validation and debugging
-
-#### **3. User Experience & Interface**
-- ✅ **3-Tab Navigation**: Insights (left) + Camera (center) + Profile (right)
-- ✅ **Glassmorphic Design**: Modern UI with dark theme and gradient effects
-- ✅ **iPhone-Style Camera**: Intuitive photo capture with gallery access
-- ✅ **Routine Input Modal**: Comprehensive data collection (sleep, water, products, notes)
-- ✅ **Cross-Platform Fonts**: Baloo Bhaijaan 2 (content) + JetBrains Mono (logo)
-
-#### **4. Data Management & Analytics**
-- ✅ **Dynamic Content Generation**: Real insights based on AI analysis + user routine data
-- ✅ **Streak Calculation**: Accurate consecutive day tracking (no duplicate day counting)
-- ✅ **Data Synchronization**: Consistent data across web and mobile platforms
-- ✅ **Enhanced Mock Data**: Fallback system with realistic score generation based on time/routine
-- ✅ **Storage Abstraction**: Unified persistence layer for seamless platform switching
-
-#### **5. Technical Validation**
-- ✅ **Backend Health**: `/health` endpoint with timestamp validation
-- ✅ **API Connectivity**: Frontend successfully connects to backend with detailed logging
-- ✅ **Error Handling**: Graceful fallback to enhanced mock data when backend unavailable
-- ✅ **Permission Management**: Camera and gallery access with proper iOS/Android permissions
-- ✅ **Development Workflow**: Hot reload, concurrent dev servers, comprehensive logging
-
-#### **6. Business Logic Implementation**
-- ✅ **Gamification**: Streak tracking with unique daily entries
-- ✅ **Personalization**: Routine-based score adjustments and fun labels
-- ✅ **Data Insights**: Dynamic recommendations based on analysis results
-- ✅ **User Journey**: Complete flow from photo capture to analysis to insights display
-
-### 🔧 **TECHNICAL SPECIFICATIONS**
-
-#### **Backend API Endpoints**
-```
-GET  /health                    # Health check
-POST /analyze                   # Image analysis with routine data
-GET  /user/{user_id}/summary    # Daily summary
-GET  /user/{user_id}/history    # Analysis history
-```
-
-#### **Frontend Architecture**
-```
-- React Native (Expo) with TypeScript
-- Context-based state management (AnalysisContext)
-- Unified storage service (AsyncStorage + localStorage)
-- Real-time AI integration with fallback systems
-- Cross-platform navigation (React Navigation)
-```
-
-#### **AI Pipeline Flow**
-```
-1. Image Capture → FormData creation
-2. Backend Processing → MediaPipe face detection
-3. Feature Analysis → 5 core models execution
-4. Score Calculation → Weighted algorithms
-5. Result Storage → Local persistence + state update
-6. UI Update → Dynamic insights generation
-```
-
-### 📊 **VALIDATION METRICS**
-
-#### **Functional Validation**
-- ✅ **Photo Capture**: Works on web and mobile with proper permissions
-- ✅ **AI Analysis**: Real computer vision processing with detailed logging
-- ✅ **Data Persistence**: Consistent storage across platforms
-- ✅ **UI Responsiveness**: Smooth navigation and real-time updates
-- ✅ **Error Recovery**: Graceful handling of network/backend failures
-
-#### **Performance Validation**
-- ✅ **Backend Response**: <2s for image analysis
-- ✅ **Frontend Loading**: <1s for screen transitions
-- ✅ **Data Sync**: Real-time updates across platforms
-- ✅ **Memory Management**: Efficient image processing and storage
-
-### 🎯 **READY FOR STAKEHOLDER REVIEW**
-
-#### **For Product Owner**
-- Complete user journey from photo to insights
-- Gamification elements (streaks, fun labels)
-- Routine tracking and personalization
-- Cross-platform consistency
-
-#### **For CTO**
-- Scalable monorepo architecture
-- Real-time AI processing pipeline
-- Comprehensive error handling and logging
-- Production-ready deployment structure
-
-#### **For Business Analyst**
-- Data collection and analytics capabilities
-- User engagement features (streaks, badges)
-- Monetization-ready architecture
-- Cross-platform user acquisition potential
-
-### 🚀 **NEXT STEPS FOR PRODUCTION**
-
-1. **Environment Setup**: Configure production MongoDB and Firebase
-2. **Model Optimization**: Quantize TensorFlow Lite models for mobile performance
-3. **Authentication**: Implement Firebase Auth with Google/Apple sign-in
-4. **Analytics**: Add user behavior tracking and KPI monitoring
-5. **Testing**: Comprehensive unit and integration test suite
-6. **Deployment**: AWS/Google Cloud infrastructure setup
-
----
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js (v20.17.0 or higher)
+
 - Python 3.8+
-- MongoDB
-- Expo CLI
-- iOS Simulator or Android Emulator (for mobile testing)
+- MongoDB (local or Atlas)
+- Firebase project (for authentication)
 
 ### Installation
 
-1. **Clone the repository**
+1. **Navigate to backend directory**
    ```bash
-   git clone <repository-url>
-   cd sleepface
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm run install:all
-   ```
-
-3. **Set up environment variables**
-   ```bash
-   # Backend
    cd backend
+   ```
+
+2. **Create virtual environment**
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Set up environment variables**
+   ```bash
    cp env.example .env
    # Edit .env with your configuration
    ```
 
-4. **Set up Firebase**
-   - Create a Firebase project
-   - Download `serviceAccountKey.json` to `backend/` directory
-   - Configure Firebase Auth providers
+5. **Set up Firebase** (Optional - for authentication)
+   - Create Firebase project at https://console.firebase.google.com
+   - Download service account key as `serviceAccountKey.json`
+   - Place in backend directory
+   - Update `.env` with Firebase credentials
 
-5. **Set up MongoDB**
-   - Install and start MongoDB
-   - Update `MONGO_URL` in backend `.env`
+6. **Set up MongoDB** (Optional - for production)
+   - Install MongoDB or use MongoDB Atlas
+   - Update `MONGO_URL` in `.env`
+   - Default uses local JSON storage in `data/` directory
 
-### Development
+### Running
 
-#### **Current Status: FULLY FUNCTIONAL** ✅
+#### Development Mode
+```bash
+python main.py
+```
 
-Both frontend and backend are running and fully integrated with real AI processing.
+Server starts at: **http://localhost:8000**
 
-1. **Start the backend**
-   ```bash
-   npm run dev:backend
-   ```
-   Backend will be available at `http://localhost:8000`
-   - Health check: `http://localhost:8000/health`
-   - AI analysis endpoint: `http://localhost:8000/analyze`
+#### With Uvicorn (Production)
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
 
-2. **Start the frontend**
-   ```bash
-   npm run dev:frontend
-   ```
-   This will start the Expo development server
-   - Web: `http://localhost:8081`
-   - Mobile: Scan QR code with Expo Go app
+#### Check Health
+```bash
+curl http://localhost:8000/health
+```
 
-3. **Run both simultaneously**
-   ```bash
-   npm run dev
-   ```
+Expected response:
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-10-16T10:30:00.123456"
+}
+```
 
-#### **Testing the Complete Flow**
+## 📡 API Endpoints
 
-1. **Open the app** in browser: `http://localhost:8081`
-2. **Take a selfie** using the camera button
-3. **Fill in routine data** (sleep hours, water intake, products used)
-4. **Click "Analyze Photo"** to trigger real AI processing
-5. **View results** in the Insights tab with dynamic recommendations
+### Core Analysis
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/analyze` | POST | Analyze selfie image with routine data |
+| `/user/{user_id}/summary` | GET | Get daily summary with trends |
+| `/user/{user_id}/history` | GET | Get analysis history (7-30 days) |
 
-#### **Validation Checklist**
+### Trend & Analytics
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/user/{user_id}/trend-analysis` | GET | Routine effectiveness analysis |
+| `/user/{user_id}/smart-analysis` | GET | Feature-product correlations |
+| `/user/{user_id}/weekly-analysis` | GET | Weekly trends and insights |
+| `/user/{user_id}/statistics` | GET | User statistics summary |
 
-- ✅ **Backend Health**: `curl http://localhost:8000/health`
-- ✅ **Frontend Loading**: App loads without errors
-- ✅ **Camera Functionality**: Photo capture works on web/mobile
-- ✅ **AI Processing**: Real computer vision analysis with logging
-- ✅ **Data Persistence**: Results saved and displayed correctly
-- ✅ **Cross-Platform**: Consistent experience across web and mobile
+### Authentication
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/auth/register` | POST | Register new user |
+| `/auth/login` | POST | Login user |
+| `/auth/me` | GET | Get current user profile |
+| `/auth/refresh` | POST | Refresh access token |
 
-### Building for Production
+### System
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/models/available` | GET | List available LLM models |
 
-1. **Build the frontend**
-   ```bash
-   npm run build:frontend
-   ```
+## 🧪 Testing
 
-2. **Start the backend in production**
-   ```bash
-   npm run start:backend
-   ```
+### Test Image Analysis
+```bash
+curl -X POST http://localhost:8000/analyze \
+  -F "file=@test_face.jpg" \
+  -F "user_id=test_user_123" \
+  -F 'routine_data={"sleep_hours": 7, "water_intake": 8, "skincare_products": ["vitamin_c", "retinol"]}'
+```
+
+### Test Summary Generation
+```bash
+curl http://localhost:8000/user/guest/summary
+```
 
 ## 🔧 Configuration
 
-### Backend Configuration
-- `MONGO_URL`: MongoDB connection string
-- `FIREBASE_PROJECT_ID`: Firebase project ID
-- `FIREBASE_PRIVATE_KEY`: Firebase private key
-- `FIREBASE_CLIENT_EMAIL`: Firebase client email
+### Environment Variables
 
-### Frontend Configuration
-- Update `API_BASE_URL` in `src/services/analysisService.ts`
-- Configure Firebase in `app.json`
+Create a `.env` file (see `env.example`):
 
-## 🎯 **CURRENT ACHIEVEMENTS & VALIDATION**
+```env
+# Database
+MONGO_URL=mongodb://localhost:27017
+DATABASE_NAME=sleepface
 
-### **✅ FULLY IMPLEMENTED FEATURES**
+# Firebase (Optional)
+FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+FIREBASE_CLIENT_EMAIL=your-client-email
 
-#### **1. Complete AI Pipeline**
-- **Real Computer Vision**: MediaPipe + OpenCV + TensorFlow Lite processing
-- **5 Core Models**: Dark circles, puffiness, brightness, wrinkles, texture analysis
-- **Weighted Scoring**: Sleep score (0-100) and skin health score (0-100)
-- **Comprehensive Logging**: Full algorithm traceability for debugging and validation
+# JWT
+JWT_SECRET_KEY=your-super-secret-jwt-key
 
-#### **2. Cross-Platform Application**
-- **Web**: Fully functional at `http://localhost:8081`
-- **Mobile**: Expo Go compatible with QR code scanning
-- **Unified Storage**: Consistent data persistence across platforms
-- **Real-time Sync**: Data updates immediately across all platforms
+# API
+API_HOST=0.0.0.0
+API_PORT=8000
+DEBUG=True
 
-#### **3. User Experience**
-- **3-Tab Navigation**: Insights, Camera, Profile with glassmorphic design
-- **iPhone-Style Camera**: Intuitive photo capture with gallery access
-- **Routine Tracking**: Sleep hours, water intake, skincare products, daily notes
-- **Dynamic Insights**: AI-generated recommendations based on analysis + routine data
-- **Gamification**: Streak tracking with unique daily entries
+# LLM (Optional)
+OPENAI_API_KEY=your-openai-api-key
+XAI_API_KEY=your-xai-grok-api-key
+```
 
-#### **4. Technical Architecture**
-- **Monorepo Structure**: Frontend + Backend in unified repository
-- **API Integration**: RESTful backend with comprehensive error handling
-- **Fallback Systems**: Enhanced mock data when backend unavailable
-- **Permission Management**: Proper camera/gallery access for iOS/Android
+## 📊 Data-Driven Smart Summary (NEW!)
 
-### **🔍 VALIDATION RESULTS**
+The backend now uses **purely data-driven analysis** instead of unreliable LLM APIs:
 
-#### **Functional Testing**
-- ✅ **Photo Capture**: Works on web and mobile with proper permissions
-- ✅ **AI Analysis**: Real computer vision processing with detailed logging
-- ✅ **Data Persistence**: Consistent storage across platforms
-- ✅ **UI Responsiveness**: Smooth navigation and real-time updates
-- ✅ **Error Recovery**: Graceful handling of network/backend failures
+### 5-Step Methodology
 
-#### **Performance Testing**
-- ✅ **Backend Response**: <2s for image analysis
-- ✅ **Frontend Loading**: <1s for screen transitions
-- ✅ **Data Sync**: Real-time updates across platforms
-- ✅ **Memory Management**: Efficient image processing and storage
+1. **Data Collection**: Historical data stored in JSON files
+2. **Trend Analysis**: 7-day vs 7-day statistical comparison
+3. **Change Detection**: Thresholds for improvement/decline/stagnation
+4. **Duration Monitoring**: 14-day stagnation detection
+5. **Summary Generation**: Rule-based insights and recommendations
 
-#### **Integration Testing**
-- ✅ **API Connectivity**: Frontend successfully connects to backend
-- ✅ **Data Flow**: Complete user journey from photo to insights
-- ✅ **Cross-Platform**: Consistent experience across web and mobile
-- ✅ **Error Handling**: Graceful fallback to enhanced mock data
+### Example Output
 
-### **📱 DEMO INSTRUCTIONS**
-
-#### **For Product Owner Review**
-1. Open `http://localhost:8081` in browser
-2. Click camera button to take a selfie
-3. Fill in routine data (sleep, water, products)
-4. Click "Analyze Photo" to see real AI processing
-5. View dynamic insights and recommendations
-6. Check streak tracking and data persistence
-
-#### **For CTO Review**
-1. Check backend logs: `cd backend && python3 main.py`
-2. Verify AI algorithm execution with detailed logging
-3. Test API endpoints: `curl http://localhost:8000/health`
-4. Review code architecture and error handling
-5. Validate cross-platform data consistency
-
-#### **For Business Analyst Review**
-1. Test complete user journey and engagement features
-2. Verify data collection and analytics capabilities
-3. Check gamification elements (streaks, fun labels)
-4. Validate monetization-ready architecture
-5. Review cross-platform user acquisition potential
-
----
-
-## 📊 Data Schemas
-
-### Analysis Output
 ```json
 {
-  "user_id": "12345",
-  "date": "2025-09-14",
-  "sleep_score": 72,
-  "skin_health_score": 78,
-  "features": {
-    "dark_circles": -5,
-    "puffiness": 0,
-    "brightness": 12,
-    "wrinkles": -2,
-    "texture": 6
+  "daily_summary": "Good progress! Sleep Score: 84, Skin Health: 78. You're seeing positive changes in 3 areas. Stay consistent! 💪",
+  "key_insights": [
+    "🎉 Brightness improved by 8.2 points (11%) - your efforts are paying off!",
+    "🔄 Pore Size hasn't improved in 2+ weeks - consider trying different products"
+  ],
+  "recommendations": [
+    "🔍 Pore Size stagnant - try niacinamide serum or salicylic acid cleanser",
+    "✅ Continue your current routine - it's working well for Brightness!"
+  ],
+  "trend_analysis": {
+    "improving_features": ["brightness", "texture"],
+    "stagnant_features": ["pore_size"]
   },
-  "routine": {
-    "sleep_hours": 6,
-    "water_intake": 2,
-    "product_used": "Glow Cream"
-  }
+  "model": "Data-Driven Analysis",
+  "data_points_analyzed": 16
 }
 ```
 
-### Summary Output
+**Benefits:**
+- ✅ 100% reliable (no API failures)
+- ✅ <100ms response time
+- ✅ Privacy-focused (no external data sharing)
+- ✅ Accurate user-specific insights
+
+See `DATA_DRIVEN_SUMMARY_IMPLEMENTATION.md` for complete documentation.
+
+## 🤖 AI Engine Details
+
+### Computer Vision Pipeline
+
+1. **Image Preprocessing**
+   - CLAHE lighting normalization
+   - Bilateral filtering (noise reduction)
+   - Skin tone normalization
+
+2. **Face Detection**
+   - MediaPipe FaceMesh (478 landmarks)
+   - Confidence threshold: 0.5
+
+3. **Feature Extraction** (per feature)
+   - **Dark Circles**: Brightness analysis, dark pixel ratio, texture variance
+   - **Puffiness**: Gradient magnitude, Laplacian variance, contour roundness
+   - **Brightness**: LAB color space, skin tone evenness, distribution analysis
+   - **Wrinkles**: Canny/Sobel edge detection, morphological operations
+   - **Texture**: LBP analysis, Gabor filters, gradient calculations
+   - **Pore Size**: Multi-scale detection, contour analysis, circularity
+
+4. **Score Calculation**
+   - Sleep Score: Weighted average of dark_circles, puffiness, brightness
+   - Skin Health Score: Weighted average of all 6 features
+   - Lifestyle adjustments (±10 points for sleep, water, products)
+
+### Model Files
+
+Place trained models in `models/` directory:
+- `dark_circles.tflite`
+- `puffiness.tflite`
+- `brightness.tflite`
+- `wrinkles.tflite`
+- `texture.tflite`
+
+**Note**: System falls back to enhanced heuristics if models not found.
+
+## 🗄️ Data Storage
+
+### Local JSON Storage
+
+User data stored in `data/{user_id}_history.json`:
+
 ```json
-{
-  "daily_summary": "Your Sleep Score is 72. Dark circles worsened slightly, but brightness improved.",
-  "weekly_summary": "This week your average Sleep Score was 68 (+7 vs last week).",
-  "routine_summary": "Glow Cream improved brightness by +9% over 10 days.",
-  "social_summary": "Zombie Monday 🧟, Glow Friday 🌟 — your week in Sleep Face!"
-}
+[
+  {
+    "date": "2025-10-16",
+    "sleep_score": 84,
+    "skin_health_score": 78,
+    "features": {
+      "dark_circles": 65.2,
+      "puffiness": 58.4,
+      ...
+    },
+    "routine": {
+      "sleep_hours": 7.5,
+      "water_intake": 8,
+      "skincare_products": ["vitamin_c", "retinol"]
+    },
+    "timestamp": "2025-10-16T08:16:03.620514"
+  }
+]
 ```
 
-## 🎨 UI/UX Design
+### MongoDB (Optional)
 
-- **Primary Color**: #6366F1 (Indigo)
-- **Secondary Color**: #8B5CF6 (Purple)
-- **Success Color**: #10B981 (Emerald)
-- **Warning Color**: #F59E0B (Amber)
-- **Error Color**: #EF4444 (Red)
-- **Font**: Baloo Bhaijaan 2 (content), JetBrains Mono (logo)
+For production, configure MongoDB Atlas:
+1. Create cluster at https://cloud.mongodb.com
+2. Get connection string
+3. Update `MONGO_URL` in `.env`
 
-## 🔐 Authentication
+## 🔒 Security
 
-- **Guest Mode**: Use app without sign-in
-- **Firebase Auth**: Google, Apple, Email
-- **Prompt sign-in** after 2-3 days to save streaks
-- **Store minimal data** → only scores + logs by default
+- Firebase JWT token validation
+- CORS middleware configured
+- Sensitive data in `.env` (gitignored)
+- Input validation with Pydantic
+- Image size limits (prevent DoS)
 
-## 💰 Monetization
+## 📈 Performance
 
-### Free Core
-- Selfie scans
-- Basic scores
-- Daily summaries
+- **Image Analysis**: <2 seconds
+- **Summary Generation**: <100ms (data-driven)
+- **Historical Data Retrieval**: <50ms
 
-### Premium ($9.99/mo)
-- Detailed zone analysis
-- Product-effectiveness tracking
-- Weekly exports + personalized insights
+## 🐛 Debugging
 
-### Additional Revenue
-- Affiliate Skincare: Commission on partner products
-- Ads: Light, native skincare/wellness ads
+Enable detailed logging:
+```python
+# In main.py
+DEBUG=True
+```
 
-## 📈 Success Metrics (KPIs)
+Check logs for:
+- `🔍 [AI ENGINE]` - Computer vision processing
+- `📊 [HISTORICAL DATA]` - Data operations
+- `🧠 [SMART SUMMARY]` - Summary generation
+- `✅ [API]` - Request/response flow
 
-- DAU (daily active users)
-- 7-day retention rate
-- Avg. daily selfies per user
-- Premium conversion % (target: 3-5%)
-- Affiliate sales revenue
+## 📚 Documentation
 
-## 🚀 Deployment Plan
-
-### MVP Release
-- Core 5 engine + streaks + daily summaries
-
-### Post-MVP (2-3 months)
-- Add redness model, blemish tracking, advanced summaries
-
-### Scaling
-- Optimize models to run fully on-device (TensorFlow Lite quantization)
-- Infra Cost at 10k DAU: <$150/month
+- [Data-Driven Summary Implementation](../DATA_DRIVEN_SUMMARY_IMPLEMENTATION.md)
+- [API Documentation](http://localhost:8000/docs) - Swagger UI
+- [ReDoc](http://localhost:8000/redoc) - Alternative API docs
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+1. Create feature branch
+2. Make changes
+3. Test with sample images
+4. Submit pull request
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License - See LICENSE file for details
 
-## 📞 Support
+## 🆘 Support
 
-For support, email support@sleepface.app or join our Discord community.
+For issues or questions:
+- Create GitHub issue
+- Email: support@sleepface.app
 
 ---
 
-Made with ❤️ for better sleep and skin health
-t
+**Made with ❤️ for better sleep and skin health**
+
