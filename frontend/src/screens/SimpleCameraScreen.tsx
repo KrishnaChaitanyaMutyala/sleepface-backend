@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,29 +7,32 @@ import {
   Alert,
   ActivityIndicator,
   StatusBar,
-  Image,
   TextInput,
   ScrollView,
   Modal,
   Dimensions,
+  Animated,
+  PanResponder,
 } from 'react-native';
-import { PanGestureHandler } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { useAnalysis } from '../contexts/AnalysisContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { RoutineData } from '../types';
 import SkincareMultiSelect from '../components/SkincareMultiSelect';
 import CustomIcon from '../components/CustomIcon';
-import { Colors, Typography, Spacing, BorderRadius, Shadows, Gradients, getThemeColors, getThemeGradients, ButtonStyles } from '../design/DesignSystem';
+import { Colors, Typography, Spacing, BorderRadius, Shadows, getThemeColors, ButtonStyles } from '../design/DesignSystem';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: screenWidth } = Dimensions.get('window');
-const thumbSize = 24;
 
-// Custom Slider Component - Simple and Working
-const CustomSlider: React.FC<{
+// ============================================================================
+// ULTRA SMOOTH SLIDER - Fixed shaking issue
+// ============================================================================
+const SmoothSlider: React.FC<{
   value: number;
   onValueChange: (value: number) => void;
   min: number;
@@ -38,108 +41,435 @@ const CustomSlider: React.FC<{
   label: string;
   unit: string;
   color: string;
+  icon: string;
   colors: any;
-}> = ({ value, onValueChange, min, max, step, label, unit, color, colors }) => {
+}> = ({ value, onValueChange, min, max, step, label, unit, color, icon, colors }) => {
   const [isDragging, setIsDragging] = useState(false);
-  const sliderWidth = screenWidth - 80; // Account for padding
+  const sliderWidth = screenWidth - 80;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
   
-  const percentage = ((value - min) / (max - min)) * 100;
-  const thumbPosition = (percentage / 100) * (sliderWidth - 32); // 32 is thumb width
-
-  const handlePanGesture = (event: any) => {
-    const { translationX } = event.nativeEvent;
-    const currentPosition = (percentage / 100) * (sliderWidth - 32);
-    const newPosition = currentPosition + translationX;
-    const newPercentage = Math.max(0, Math.min(100, (newPosition / (sliderWidth - 32)) * 100));
-    const newValue = min + (newPercentage / 100) * (max - min);
-    const steppedValue = Math.round(newValue / step) * step;
-    onValueChange(Math.max(min, Math.min(max, steppedValue)));
+  // Calculate thumb position
+  const getThumbPosition = (val: number) => {
+    const percentage = ((val - min) / (max - min)) * 100;
+    return (percentage / 100) * (sliderWidth - 40);
   };
 
+  const [thumbPosition, setThumbPosition] = useState(getThumbPosition(value));
+
+  // Create pan responder for smooth dragging
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        setIsDragging(true);
+        Animated.spring(scaleAnim, {
+          toValue: 1.2,
+          useNativeDriver: true,
+          tension: 150,
+          friction: 7,
+        }).start();
+      },
+      onPanResponderMove: (_, gestureState) => {
+        // Calculate new position
+        const newPosition = Math.max(
+          0,
+          Math.min(sliderWidth - 40, thumbPosition + gestureState.dx)
+        );
+        
+        // Calculate new value
+        const newPercentage = (newPosition / (sliderWidth - 40)) * 100;
+        const rawValue = min + (newPercentage / 100) * (max - min);
+        const steppedValue = Math.round(rawValue / step) * step;
+        const clampedValue = Math.max(min, Math.min(max, steppedValue));
+        
+        // Update value immediately
+        onValueChange(clampedValue);
+      },
+      onPanResponderRelease: () => {
+        setIsDragging(false);
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 150,
+          friction: 7,
+        }).start();
+        
+        // Update thumb position to final value
+        setThumbPosition(getThumbPosition(value));
+      },
+      onPanResponderTerminate: () => {
+        setIsDragging(false);
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          useNativeDriver: true,
+        }).start();
+      },
+    })
+  ).current;
+
+  // Update thumb position when value changes externally
+  React.useEffect(() => {
+    if (!isDragging) {
+      setThumbPosition(getThumbPosition(value));
+    }
+  }, [value, isDragging]);
+
+  // Handle track press
   const handleTrackPress = (event: any) => {
     const { locationX } = event.nativeEvent;
     const newPercentage = Math.max(0, Math.min(100, (locationX / sliderWidth) * 100));
-    const newValue = min + (newPercentage / 100) * (max - min);
-    const steppedValue = Math.round(newValue / step) * step;
-    onValueChange(Math.max(min, Math.min(max, steppedValue)));
+    const rawValue = min + (newPercentage / 100) * (max - min);
+    const steppedValue = Math.round(rawValue / step) * step;
+    const clampedValue = Math.max(min, Math.min(max, steppedValue));
+    
+    onValueChange(clampedValue);
+    setThumbPosition(getThumbPosition(clampedValue));
   };
+
+  const percentage = ((value - min) / (max - min)) * 100;
 
   return (
     <View style={styles.sliderContainer}>
+      {/* Header with Icon */}
       <View style={styles.sliderHeader}>
-        <Text style={[styles.sliderLabel, { color: colors.textPrimary }]}>{label}</Text>
-        <View style={styles.sliderValueContainer}>
-          <Text style={[styles.sliderValue, { color }]}>
+        <View style={styles.sliderLabelRow}>
+          <View style={[styles.iconContainer, { backgroundColor: color + '15' }]}>
+            <CustomIcon name={icon} size={20} color={color} />
+          </View>
+          <Text style={[styles.labelText, { color: colors.textPrimary }]}>
+            {label}
+          </Text>
+        </View>
+        
+        {/* Value Display */}
+        <View style={[styles.valueChip, { backgroundColor: color + '15', borderColor: color + '30' }]}>
+          <Text style={[styles.valueNumber, { color }]}>
             {value.toFixed(step < 1 ? 1 : 0)}
           </Text>
-          <Text style={[styles.sliderUnit, { color: color + 'CC' }]}>{unit}</Text>
+          <Text style={[styles.valueUnit, { color: color + 'DD' }]}>{unit}</Text>
         </View>
       </View>
-      
-      <View style={styles.sliderWrapper}>
-        <TouchableOpacity 
-          style={[styles.sliderTrack, { backgroundColor: colors.surfaceSecondary }]}
-          onPress={handleTrackPress}
+
+      {/* Slider Track */}
+      <View style={styles.trackContainer}>
+        <TouchableOpacity
           activeOpacity={1}
+          onPress={handleTrackPress}
+          style={styles.trackWrapper}
         >
-          <View 
-            style={[
-              styles.sliderFill, 
-              { 
-                width: `${percentage}%`,
-                backgroundColor: color 
-              }
-            ]} 
-          />
+          {/* Background Track */}
+          <View style={[styles.track, { backgroundColor: colors.surfaceSecondary }]}>
+            {/* Filled Track with Gradient */}
+            <LinearGradient
+              colors={[color, color + 'DD']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={[styles.trackFill, { width: `${percentage}%` }]}
+            />
+          </View>
         </TouchableOpacity>
-        
-        <PanGestureHandler
-          onGestureEvent={handlePanGesture}
-          onHandlerStateChange={(event) => {
-            if (event.nativeEvent.state === 1) { // BEGAN
-              setIsDragging(true);
-            } else if (event.nativeEvent.state === 5) { // END
-              setIsDragging(false);
-            }
-          }}
-          minDist={0}
-          activeOffsetX={[-10, 10]}
+
+        {/* Draggable Thumb */}
+        <Animated.View
+          {...panResponder.panHandlers}
+          style={[
+            styles.thumb,
+            {
+              left: thumbPosition,
+              backgroundColor: color,
+              transform: [{ scale: scaleAnim }],
+              shadowColor: color,
+              shadowOpacity: isDragging ? 0.5 : 0.3,
+              shadowRadius: isDragging ? 16 : 10,
+              elevation: isDragging ? 12 : 8,
+            },
+          ]}
         >
-          <View 
-            style={[
-              styles.sliderThumb, 
-              { 
-                left: thumbPosition,
-                backgroundColor: color,
-                transform: [{ scale: isDragging ? 1.2 : 1 }],
-                shadowColor: color,
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: isDragging ? 0.4 : 0.2,
-                shadowRadius: isDragging ? 12 : 8,
-                elevation: isDragging ? 8 : 6,
-              }
-            ]} 
-          />
-        </PanGestureHandler>
+          <View style={styles.thumbInner}>
+            <View style={[styles.thumbDot, { backgroundColor: '#FFFFFF' }]} />
+          </View>
+        </Animated.View>
       </View>
-      
-      <View style={styles.sliderLabels}>
-        <Text style={[styles.sliderMinLabel, { color: colors.textTertiary }]}>{min}{unit}</Text>
-        <Text style={[styles.sliderMaxLabel, { color: colors.textTertiary }]}>{max}{unit}</Text>
+
+      {/* Min/Max Labels */}
+      <View style={styles.rangeLabels}>
+        <Text style={[styles.rangeLabel, { color: colors.textTertiary }]}>
+          {min}{unit}
+        </Text>
+        <View style={styles.rangeDivider} />
+        <Text style={[styles.rangeLabel, { color: colors.textTertiary }]}>
+          {max}{unit}
+        </Text>
       </View>
     </View>
   );
 };
 
+// ============================================================================
+// GUEST WELCOME MODAL (for guest users only)
+// ============================================================================
+const GuestWelcomeModal: React.FC<{
+  visible: boolean;
+  onClose: () => void;
+}> = ({ visible, onClose }) => {
+  const { isDark } = useTheme();
+  const colors = getThemeColors(isDark);
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 50,
+          friction: 7,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      scaleAnim.setValue(0.8);
+      opacityAnim.setValue(0);
+    }
+  }, [visible]);
+
+  return (
+    <Modal transparent visible={visible} animationType="fade">
+      <View style={styles.welcomeModalOverlay}>
+        <Animated.View
+          style={[
+            styles.welcomeModalContent,
+            { 
+              backgroundColor: colors.surface,
+              transform: [{ scale: scaleAnim }],
+              opacity: opacityAnim,
+            },
+          ]}
+        >
+          {/* Close Button */}
+          <TouchableOpacity style={styles.welcomeCloseButton} onPress={onClose}>
+            <CustomIcon name="close" size={24} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          {/* Gradient Header */}
+          <LinearGradient
+            colors={[Colors.primary, Colors.accent]}
+            style={styles.welcomeModalHeader}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <View style={styles.welcomeIconContainer}>
+              <CustomIcon name="sparkles" size={48} color="#FFFFFF" />
+            </View>
+          </LinearGradient>
+
+          {/* Content */}
+          <View style={styles.welcomeModalBody}>
+            <Text style={[styles.welcomeTitle, { color: colors.textPrimary }]}>
+              Welcome to SleepFace! 👋
+            </Text>
+            
+            <Text style={[styles.welcomeMessage, { color: colors.textSecondary }]}>
+              Track your sleep quality and skin health with AI-powered analysis. Get personalized insights and watch your wellness journey unfold.
+            </Text>
+
+            <View style={styles.welcomeFeatures}>
+              <View style={styles.welcomeFeature}>
+                <View style={[styles.welcomeFeatureIcon, { backgroundColor: Colors.primary + '15' }]}>
+                  <CustomIcon name="camera" size={20} color={Colors.primary} />
+                </View>
+                <Text style={[styles.welcomeFeatureText, { color: colors.textSecondary }]}>
+                  Daily selfie analysis
+                </Text>
+              </View>
+
+              <View style={styles.welcomeFeature}>
+                <View style={[styles.welcomeFeatureIcon, { backgroundColor: Colors.accent + '15' }]}>
+                  <CustomIcon name="trending-up" size={20} color={Colors.accent} />
+                </View>
+                <Text style={[styles.welcomeFeatureText, { color: colors.textSecondary }]}>
+                  Track your progress
+                </Text>
+              </View>
+
+              <View style={styles.welcomeFeature}>
+                <View style={[styles.welcomeFeatureIcon, { backgroundColor: Colors.success + '15' }]}>
+                  <CustomIcon name="lightbulb" size={20} color={Colors.success} />
+                </View>
+                <Text style={[styles.welcomeFeatureText, { color: colors.textSecondary }]}>
+                  Personalized tips
+                </Text>
+              </View>
+            </View>
+
+            <Text style={[styles.welcomeNote, { color: colors.textTertiary }]}>
+              You're browsing as a guest. Sign up to save your data and unlock all features!
+            </Text>
+
+            {/* Action Button */}
+            <TouchableOpacity style={styles.welcomeActionButton} onPress={onClose}>
+              <LinearGradient
+                colors={[Colors.primary, Colors.accent]}
+                style={styles.welcomeActionGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              >
+                <CustomIcon name="camera" size={20} color="#FFFFFF" />
+                <Text style={styles.welcomeActionText}>Take Your First Selfie</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+};
+
+// ============================================================================
+// REGISTERED USER WELCOME MODAL (for new registered users only - shows once)
+// ============================================================================
+const RegisteredWelcomeModal: React.FC<{
+  visible: boolean;
+  onClose: () => void;
+}> = ({ visible, onClose }) => {
+  const { isDark } = useTheme();
+  const colors = getThemeColors(isDark);
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 50,
+          friction: 7,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      scaleAnim.setValue(0.8);
+      opacityAnim.setValue(0);
+    }
+  }, [visible]);
+
+  return (
+    <Modal transparent visible={visible} animationType="fade">
+      <View style={styles.welcomeModalOverlay}>
+        <Animated.View
+          style={[
+            styles.welcomeModalContent,
+            { 
+              backgroundColor: colors.surface,
+              transform: [{ scale: scaleAnim }],
+              opacity: opacityAnim,
+            },
+          ]}
+        >
+          {/* Close Button */}
+          <TouchableOpacity style={styles.welcomeCloseButton} onPress={onClose}>
+            <CustomIcon name="close" size={24} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          {/* Gradient Header */}
+          <LinearGradient
+            colors={[Colors.success, Colors.primary]}
+            style={styles.welcomeModalHeader}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <View style={styles.welcomeIconContainer}>
+              <CustomIcon name="checkmark-circle" size={56} color="#FFFFFF" />
+            </View>
+          </LinearGradient>
+
+          {/* Content */}
+          <View style={styles.welcomeModalBody}>
+            <Text style={[styles.welcomeTitle, { color: colors.textPrimary }]}>
+              Welcome Aboard! 🎉
+            </Text>
+            
+            <Text style={[styles.welcomeMessage, { color: colors.textSecondary }]}>
+              Thank you for joining SleepFace! Your account is ready and your data will be securely saved. Let's start your wellness journey with your first selfie!
+            </Text>
+
+            <View style={styles.welcomeFeatures}>
+              <View style={styles.welcomeFeature}>
+                <View style={[styles.welcomeFeatureIcon, { backgroundColor: Colors.success + '15' }]}>
+                  <CustomIcon name="save" size={20} color={Colors.success} />
+                </View>
+                <Text style={[styles.welcomeFeatureText, { color: colors.textSecondary }]}>
+                  Your data is saved forever
+                </Text>
+              </View>
+
+              <View style={styles.welcomeFeature}>
+                <View style={[styles.welcomeFeatureIcon, { backgroundColor: Colors.primary + '15' }]}>
+                  <CustomIcon name="trending-up" size={20} color={Colors.primary} />
+                </View>
+                <Text style={[styles.welcomeFeatureText, { color: colors.textSecondary }]}>
+                  Track long-term progress
+                </Text>
+              </View>
+
+              <View style={styles.welcomeFeature}>
+                <View style={[styles.welcomeFeatureIcon, { backgroundColor: Colors.accent + '15' }]}>
+                  <CustomIcon name="star" size={20} color={Colors.accent} />
+                </View>
+                <Text style={[styles.welcomeFeatureText, { color: colors.textSecondary }]}>
+                  Unlock all premium features
+                </Text>
+              </View>
+            </View>
+
+            <Text style={[styles.welcomeNote, { color: colors.textTertiary }]}>
+              Your wellness journey starts now. Take your first selfie to get personalized insights!
+            </Text>
+
+            {/* Action Button */}
+            <TouchableOpacity style={styles.welcomeActionButton} onPress={onClose}>
+              <LinearGradient
+                colors={[Colors.success, Colors.primary]}
+                style={styles.welcomeActionGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              >
+                <CustomIcon name="camera" size={20} color="#FFFFFF" />
+                <Text style={styles.welcomeActionText}>Take My First Selfie</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+};
+
+// ============================================================================
+// MAIN CAMERA SCREEN COMPONENT
+// ============================================================================
 const SimpleCameraScreen: React.FC = () => {
   const navigation = useNavigation();
   const { isDark } = useTheme();
   const colors = getThemeColors(isDark);
-  const gradients = getThemeGradients(isDark);
+  const { isGuest } = useAuth();
   const { analyzeImage, isLoading } = useAnalysis();
   const [isCapturing, setIsCapturing] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [showRoutineModal, setShowRoutineModal] = useState(false);
+  const [showGuestWelcome, setShowGuestWelcome] = useState(false);
+  const [showRegisteredWelcome, setShowRegisteredWelcome] = useState(false);
   const [routineData, setRoutineData] = useState<RoutineData>({
     sleep_hours: 7.5,
     water_intake: 8,
@@ -148,37 +478,55 @@ const SimpleCameraScreen: React.FC = () => {
     daily_note: undefined,
   });
 
+  // Check if guest user should see welcome modal
+  useEffect(() => {
+    const checkGuestWelcome = async () => {
+      if (isGuest) {
+        const hasSeenGuestWelcome = await AsyncStorage.getItem('hasSeenGuestWelcome');
+        if (!hasSeenGuestWelcome) {
+          setShowGuestWelcome(true);
+        }
+      }
+    };
+    checkGuestWelcome();
+  }, [isGuest]);
+
+  // Check if registered user should see welcome modal (only once after registration)
+  useEffect(() => {
+    const checkRegisteredWelcome = async () => {
+      if (!isGuest) {
+        const hasSeenRegisteredWelcome = await AsyncStorage.getItem('hasSeenRegisteredWelcome');
+        if (!hasSeenRegisteredWelcome) {
+          setShowRegisteredWelcome(true);
+        }
+      }
+    };
+    checkRegisteredWelcome();
+  }, [isGuest]);
+
   const takePicture = async () => {
     if (isCapturing) return;
 
     try {
       setIsCapturing(true);
-      console.log('Requesting camera permissions...');
-      
-      // Request camera permissions first
       const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
+      
       if (!cameraPermission.granted) {
         Alert.alert(
           'Camera Permission Required',
-          'Please enable camera access in your device settings to take photos.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Settings', onPress: () => ImagePicker.requestCameraPermissionsAsync() }
-          ]
+          'Please enable camera access in your device settings.',
+          [{ text: 'OK' }]
         );
         return;
       }
 
-      console.log('Opening camera...');
-      
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.8,
+        cameraType: ImagePicker.CameraType.front, // Always front camera for selfies
       });
-
-      console.log('Camera result:', result);
 
       if (!result.canceled && result.assets[0]?.uri) {
         setSelectedImage(result.assets[0].uri);
@@ -194,31 +542,23 @@ const SimpleCameraScreen: React.FC = () => {
 
   const pickFromGallery = async () => {
     try {
-      console.log('Requesting media library permissions...');
-      
-      // Request media library permissions first
       const mediaPermission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
       if (!mediaPermission.granted) {
         Alert.alert(
           'Media Library Permission Required',
-          'Please enable photo library access in your device settings to select photos.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Settings', onPress: () => ImagePicker.requestMediaLibraryPermissionsAsync() }
-          ]
+          'Please enable photo library access in your device settings.',
+          [{ text: 'OK' }]
         );
         return;
       }
 
-      console.log('Opening gallery...');
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.8,
       });
-
-      console.log('Gallery result:', result);
 
       if (!result.canceled && result.assets[0]?.uri) {
         setSelectedImage(result.assets[0].uri);
@@ -235,9 +575,8 @@ const SimpleCameraScreen: React.FC = () => {
     
     try {
       setIsCapturing(true);
-      const analysisResult = await analyzeImage(selectedImage, routineData);
+      await analyzeImage(selectedImage, routineData);
       setShowRoutineModal(false);
-      // Reset routine data after successful analysis
       setRoutineData({
         sleep_hours: 7.5,
         water_intake: 8,
@@ -267,7 +606,6 @@ const SimpleCameraScreen: React.FC = () => {
 
   const handleCloseModal = () => {
     setShowRoutineModal(false);
-    // Reset routine data when modal is closed without analysis
     setRoutineData({
       sleep_hours: 7.5,
       water_intake: 8,
@@ -277,78 +615,141 @@ const SimpleCameraScreen: React.FC = () => {
     });
   };
 
+  const handleGuestWelcomeClose = async () => {
+    setShowGuestWelcome(false);
+    await AsyncStorage.setItem('hasSeenGuestWelcome', 'true');
+  };
+
+  const handleRegisteredWelcomeClose = async () => {
+    setShowRegisteredWelcome(false);
+    await AsyncStorage.setItem('hasSeenRegisteredWelcome', 'true');
+  };
+
   return (
-    <ScrollView style={[styles.container, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false}>
-      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor="transparent" translucent />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
       
-      {/* Header - Everything in one gradient like HomeScreen */}
-      <LinearGradient
-        colors={[colors.background, colors.background]}
-        style={styles.header}
+      {/* Guest Welcome Modal */}
+      <GuestWelcomeModal
+        visible={showGuestWelcome}
+        onClose={handleGuestWelcomeClose}
+      />
+
+      {/* Registered User Welcome Modal */}
+      <RegisteredWelcomeModal
+        visible={showRegisteredWelcome}
+        onClose={handleRegisteredWelcomeClose}
+      />
+      
+      <ScrollView 
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.headerContent}>
-          <TouchableOpacity style={styles.headerButton} onPress={() => navigation.goBack()}>
+        {/* Modern Header */}
+        <View style={styles.modernHeader}>
+          <TouchableOpacity 
+            style={[styles.backButton, { backgroundColor: colors.surfaceSecondary }]} 
+            onPress={() => navigation.goBack()}
+          >
             <CustomIcon name="chevronLeft" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: Colors.primary }]}>Take Selfie</Text>
+          
+          <Text style={[styles.modernTitle, { color: colors.textPrimary }]}>
+            Take Selfie
+          </Text>
+          
           <View style={styles.headerSpacer} />
         </View>
 
-        {/* Camera Icon */}
-        <View style={styles.cameraIconContainer}>
-          <View style={styles.cameraIcon}>
-            <CustomIcon name="camera" size={60} color={Colors.primary} />
-          </View>
-        </View>
-
-        {/* Instructions */}
-        <View style={styles.instructions}>
-          <Text style={[styles.instructionTitle, { color: colors.textPrimary }]}>Take Your Selfie</Text>
-          <Text style={[styles.instructionText, { color: colors.textSecondary }]}>
-            Position your face in good lighting and take a clear selfie for analysis
+        {/* Hero Section */}
+        <View style={styles.heroSection}>
+          <LinearGradient
+            colors={[Colors.primary + '20', Colors.accent + '20']}
+            style={styles.heroGradient}
+          >
+            <View style={styles.cameraHero}>
+              <CustomIcon name="camera" size={64} color={Colors.primary} />
+            </View>
+          </LinearGradient>
+          
+          <Text style={[styles.heroTitle, { color: colors.textPrimary }]}>
+            Capture Your Skin Journey
+          </Text>
+          <Text style={[styles.heroSubtitle, { color: colors.textSecondary }]}>
+            Take a clear selfie for AI-powered skin analysis
           </Text>
         </View>
 
         {/* Action Buttons */}
-        <View style={styles.buttonContainer}>
+        <View style={styles.actionGrid}>
           <TouchableOpacity
-            style={ButtonStyles.primary}
+            style={styles.primaryActionButton}
             onPress={takePicture}
             disabled={isCapturing}
+            activeOpacity={0.8}
           >
-            {isCapturing ? (
-              <ActivityIndicator size="small" color={Colors.textInverse} />
-            ) : (
-              <>
-                <CustomIcon name="camera" size={24} color={Colors.textInverse} />
-                <Text style={ButtonStyles.text.primary}>Take Photo</Text>
-              </>
-            )}
+            <LinearGradient
+              colors={[Colors.primary, Colors.accent]}
+              style={styles.buttonGradient}
+            >
+              {isCapturing ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <CustomIcon name="camera" size={28} color="#FFFFFF" />
+                  <Text style={styles.primaryButtonText}>Take Selfie</Text>
+                </>
+              )}
+            </LinearGradient>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={ButtonStyles.secondary}
+            style={[styles.secondaryActionButton, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
             onPress={pickFromGallery}
+            activeOpacity={0.8}
           >
-            <CustomIcon name="camera" size={24} color={Colors.primary} />
-            <Text style={ButtonStyles.text.secondary}>Choose from Gallery</Text>
+            <CustomIcon name="image" size={24} color={Colors.primary} />
+            <Text style={[styles.secondaryButtonText, { color: colors.textPrimary }]}>
+              Choose from Gallery
+            </Text>
           </TouchableOpacity>
         </View>
 
-        {/* Tips */}
-        <LinearGradient
-          colors={[Colors.primary + '10', Colors.accent + '10']}
-          style={[styles.tips, { borderColor: colors.border }]}
-        >
-          <Text style={[styles.tipsTitle, { color: colors.textPrimary }]}>Tips for best results:</Text>
-          <Text style={[styles.tipText, { color: colors.textSecondary }]}>• Use good lighting</Text>
-          <Text style={[styles.tipText, { color: colors.textSecondary }]}>• Look directly at the camera</Text>
-          <Text style={[styles.tipText, { color: colors.textSecondary }]}>• Keep your face centered</Text>
-          <Text style={[styles.tipText, { color: colors.textSecondary }]}>• Avoid shadows on your face</Text>
-        </LinearGradient>
-      </LinearGradient>
+        {/* Tips Card */}
+        <View style={[styles.tipsCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={styles.tipsHeader}>
+            <View style={[styles.tipsIcon, { backgroundColor: Colors.accent + '15' }]}>
+              <CustomIcon name="lightbulb" size={20} color={Colors.accent} />
+            </View>
+            <Text style={[styles.tipsTitle, { color: colors.textPrimary }]}>
+              Pro Tips
+            </Text>
+          </View>
+          
+          <View style={styles.tipsList}>
+            {[
+              'Use natural daylight or bright lighting',
+              'Look directly at the camera',
+              'Keep your face centered in frame',
+              'Remove glasses and pull back hair',
+            ].map((tip, index) => (
+              <View key={index} style={styles.tipRow}>
+                <View style={[styles.tipBullet, { backgroundColor: Colors.primary + '30' }]}>
+                  <Text style={[styles.tipBulletText, { color: Colors.primary }]}>
+                    {index + 1}
+                  </Text>
+                </View>
+                <Text style={[styles.tipText, { color: colors.textSecondary }]}>
+                  {tip}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      </ScrollView>
 
-      {/* Routine Input Modal */}
+      {/* Routine Modal */}
       <Modal
         visible={showRoutineModal}
         animationType="slide"
@@ -356,36 +757,34 @@ const SimpleCameraScreen: React.FC = () => {
         onRequestClose={handleCloseModal}
       >
         <View style={styles.modalOverlay}>
-          <LinearGradient
-            colors={[colors.surface, colors.surfaceSecondary]}
-            style={[styles.modalContainer, { borderBottomColor: colors.border }]}
-          >
-            {/* Modal Header */}
-            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-              <View style={[styles.modalHandle, { backgroundColor: colors.textTertiary }]} />
-              <View style={styles.modalHeaderContent}>
-                <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Daily Routine</Text>
-                <TouchableOpacity
-                  style={styles.modalCloseButton}
-                  onPress={handleCloseModal}
-                >
-                  <CustomIcon name="close" size={20} color={colors.textSecondary} />
-                </TouchableOpacity>
+          <View style={[styles.premiumModal, { backgroundColor: colors.background }]}>
+            <View style={[styles.modalHandle, { backgroundColor: colors.textTertiary }]} />
+            
+            <View style={styles.premiumModalHeader}>
+              <View>
+                <Text style={[styles.modalMainTitle, { color: colors.textPrimary }]}>
+                  Daily Routine
+                </Text>
+                <Text style={[styles.modalMainSubtitle, { color: colors.textSecondary }]}>
+                  Help us personalize your insights
+                </Text>
               </View>
+              
+              <TouchableOpacity
+                style={[styles.closeButton, { backgroundColor: colors.surfaceSecondary }]}
+                onPress={handleCloseModal}
+              >
+                <CustomIcon name="close" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
             </View>
 
-            <ScrollView style={[styles.modalContent]} showsVerticalScrollIndicator={false}>
-              <View style={styles.modalSubtitleContainer}>
-                <Text style={[styles.modalSubtitle, { color: colors.textPrimary }]}>
-                  📊 Share Your Daily Routine
-                </Text>
-                <Text style={[styles.modalDescription, { color: colors.textSecondary }]}>
-                  Help our AI provide personalized insights by sharing your daily habits
-                </Text>
-              </View>
-
-              {/* Sleep Hours Slider */}
-              <CustomSlider
+            <ScrollView 
+              style={styles.modalScroll}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.modalScrollContent}
+            >
+              {/* Sleep Slider */}
+              <SmoothSlider
                 value={routineData.sleep_hours || 7.5}
                 onValueChange={(value) => setRoutineData(prev => ({
                   ...prev,
@@ -394,14 +793,15 @@ const SimpleCameraScreen: React.FC = () => {
                 min={0}
                 max={12}
                 step={0.5}
-                label="Sleep Hours Last Night"
+                label="Sleep Duration"
                 unit="h"
-                color="#007AFF"
+                color="#5B8DEF"
+                icon="moon"
                 colors={colors}
               />
 
-              {/* Water Intake Slider */}
-              <CustomSlider
+              {/* Water Slider */}
+              <SmoothSlider
                 value={routineData.water_intake || 8}
                 onValueChange={(value) => setRoutineData(prev => ({
                   ...prev,
@@ -410,15 +810,23 @@ const SimpleCameraScreen: React.FC = () => {
                 min={0}
                 max={20}
                 step={1}
-                label="Water Intake Today"
+                label="Water Intake"
                 unit=" glasses"
-                color="#34C759"
+                color="#4ECDC4"
+                icon="droplet"
                 colors={colors}
               />
 
-              {/* Skin Care Products */}
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: colors.textPrimary }]}>Skin Care Products Used</Text>
+              {/* Skincare Products */}
+              <View style={[styles.inputSection, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <View style={styles.inputHeader}>
+                  <View style={[styles.inputIcon, { backgroundColor: Colors.primary + '15' }]}>
+                    <CustomIcon name="sparkles" size={18} color={Colors.primary} />
+                  </View>
+                  <Text style={[styles.inputTitle, { color: colors.textPrimary }]}>
+                    Skincare Products
+                  </Text>
+                </View>
                 <SkincareMultiSelect
                   selectedProducts={routineData.skincare_products || []}
                   onSelectionChange={(products) => setRoutineData(prev => ({
@@ -426,16 +834,27 @@ const SimpleCameraScreen: React.FC = () => {
                     skincare_products: products,
                     product_used: products.length > 0 ? products.join(', ') : undefined
                   }))}
-                  placeholder="Select your skincare products..."
+                  placeholder="Select products you used today..."
                 />
               </View>
 
               {/* Daily Note */}
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: colors.textPrimary }]}>Daily Note (Optional)</Text>
+              <View style={[styles.inputSection, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <View style={styles.inputHeader}>
+                  <View style={[styles.inputIcon, { backgroundColor: Colors.accent + '15' }]}>
+                    <CustomIcon name="edit" size={18} color={Colors.accent} />
+                  </View>
+                  <Text style={[styles.inputTitle, { color: colors.textPrimary }]}>
+                    Daily Note (Optional)
+                  </Text>
+                </View>
                 <TextInput
-                  style={[styles.textInput, styles.textArea, { backgroundColor: colors.surfaceSecondary, color: colors.textPrimary, borderColor: colors.border }]}
-                  placeholder="Any additional notes about your day..."
+                  style={[styles.modernTextArea, { 
+                    backgroundColor: colors.surfaceSecondary, 
+                    color: colors.textPrimary,
+                    borderColor: colors.border 
+                  }]}
+                  placeholder="How's your skin feeling today?"
                   placeholderTextColor={colors.textTertiary}
                   value={routineData.daily_note || ''}
                   onChangeText={(text) => setRoutineData(prev => ({
@@ -443,417 +862,577 @@ const SimpleCameraScreen: React.FC = () => {
                     daily_note: text || undefined
                   }))}
                   multiline
-                  numberOfLines={3}
+                  numberOfLines={4}
                 />
               </View>
 
-              {/* Action Buttons */}
-              <View style={styles.modalButtonContainer}>
+              <View style={{ height: 20 }} />
+            </ScrollView>
+            
+            {/* Fixed Bottom Buttons */}
+            <View style={[styles.modalFooter, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
+              <View style={styles.buttonGroup}>
                 <TouchableOpacity
-                  style={ButtonStyles.secondary}
+                  style={[styles.skipButton, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
                   onPress={handleSkipRoutine}
                 >
-                  <Text style={ButtonStyles.text.secondary}>Skip</Text>
+                  <Text style={[styles.skipButtonText, { color: colors.textSecondary }]}>
+                    Skip for Now
+                  </Text>
                 </TouchableOpacity>
                 
                 <TouchableOpacity
-                  style={ButtonStyles.primary}
+                  style={styles.analyzeButton}
                   onPress={handleAnalyzeImage}
                   disabled={isCapturing}
                 >
-                  {isCapturing ? (
-                    <ActivityIndicator size="small" color={Colors.textInverse} />
-                  ) : (
-                    <Text style={ButtonStyles.text.primary}>Analyze Photo</Text>
-                  )}
+                  <LinearGradient
+                    colors={[Colors.primary, Colors.accent]}
+                    style={styles.analyzeButtonGradient}
+                  >
+                    {isCapturing ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <CustomIcon name="sparkles" size={20} color="#FFFFFF" />
+                        <Text style={styles.analyzeButtonText}>
+                          Analyze Now
+                        </Text>
+                      </>
+                    )}
+                  </LinearGradient>
                 </TouchableOpacity>
               </View>
-            </ScrollView>
-          </LinearGradient>
+            </View>
+          </View>
         </View>
       </Modal>
-
-      {/* Bottom Spacing */}
-      <View style={styles.bottomSpacing} />
-    </ScrollView>
+    </View>
   );
 };
 
+// ============================================================================
+// STYLES
+// ============================================================================
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
   },
-  header: {
-    paddingTop: 60,
-    paddingBottom: 30,
-    paddingHorizontal: Spacing.lg,
+  scrollView: {
+    flex: 1,
   },
-  headerContent: {
+  scrollContent: {
+    paddingBottom: 100,
+  },
+  
+  // Header
+  modernHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing['2xl'],
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 20,
   },
-  headerButton: {
+  backButton: {
     width: 44,
     height: 44,
-    borderRadius: BorderRadius.full,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  modernTitle: {
+    fontSize: 20,
+    fontWeight: '700',
   },
   headerSpacer: {
     width: 44,
-    height: 44,
   },
-  headerTitle: {
-    fontSize: Typography.fontSize.lg,
-    fontWeight: '600' as any,
-    color: '#007AFF',
-    fontFamily: Typography.fontFamily.primary,
+  
+  // Hero
+  heroSection: {
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 30,
   },
-  cameraIconContainer: {
-    flex: 1,
+  heroGradient: {
+    borderRadius: 80,
+    padding: 30,
+    marginBottom: 24,
+  },
+  cameraHero: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  cameraIcon: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.3)',
-    shadowColor: '#007AFF',
-    shadowOffset: { width: 0, height: 4 },
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
-    shadowRadius: 8,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  heroTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  heroSubtitle: {
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  
+  // Actions
+  actionGrid: {
+    paddingHorizontal: 20,
+    gap: 12,
+    marginBottom: 24,
+  },
+  primaryActionButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
     elevation: 8,
   },
-  instructions: {
-    alignItems: 'center',
-    marginBottom: Spacing['3xl'],
-  },
-  instructionTitle: {
-    fontSize: Typography.fontSize['3xl'],
-    fontWeight: Typography.fontWeight.bold,
-    color: Colors.textInverse,
-    marginBottom: Spacing.sm,
-    textAlign: 'center',
-    fontFamily: Typography.fontFamily.primary,
-  },
-  instructionText: {
-    fontSize: Typography.fontSize.base,
-    color: Colors.textTertiary,
-    textAlign: 'center',
-    lineHeight: Typography.lineHeight.relaxed * Typography.fontSize.base,
-    fontFamily: Typography.fontFamily.secondary,
-  },
-  buttonContainer: {
-    gap: Spacing.md,
-    marginBottom: Spacing['3xl'],
-  },
-  actionButton: {
+  buttonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing['2xl'],
-    borderRadius: BorderRadius.full,
-    gap: Spacing.sm,
-    shadowColor: Colors.primary,
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+    gap: 12,
+  },
+  primaryButtonText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  secondaryActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+    borderRadius: 16,
+    borderWidth: 2,
+    gap: 12,
+  },
+  secondaryButtonText: {
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  
+  // Tips
+  tipsCard: {
+    marginHorizontal: 20,
+    padding: 20,
+    borderRadius: 20,
+    borderWidth: 1,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
   },
-  cameraButton: {
-    backgroundColor: '#007AFF',
+  tipsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 10,
   },
-  galleryButton: {
-    backgroundColor: 'rgba(99, 102, 241, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.3)',
-  },
-  buttonText: {
-    fontSize: Typography.fontSize.base,
-    fontWeight: Typography.fontWeight.semibold,
-    color: Colors.textInverse,
-    fontFamily: Typography.fontFamily.primary,
-  },
-  galleryButtonText: {
-    color: Colors.primary,
-  },
-  tips: {
-    padding: Spacing.lg,
-    borderRadius: BorderRadius['2xl'],
-    borderWidth: 1,
-    ...Shadows.md,
+  tipsIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   tipsTitle: {
-    fontSize: Typography.fontSize.base,
-    fontWeight: Typography.fontWeight.semibold,
-    color: Colors.textInverse,
-    marginBottom: Spacing.sm,
-    fontFamily: Typography.fontFamily.primary,
+    fontSize: 18,
+    fontWeight: '700',
   },
-  tipText: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.textTertiary,
-    marginBottom: Spacing.xs,
-    fontFamily: Typography.fontFamily.secondary,
+  tipsList: {
+    gap: 12,
   },
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'flex-end',
-  },
-  modalContainer: {
-    borderTopLeftRadius: BorderRadius['2xl'],
-    borderTopRightRadius: BorderRadius['2xl'],
-    maxHeight: '85%',
-    borderWidth: 1,
-    borderColor: Colors.primary + '20',
-    ...Shadows.lg,
-  },
-  modalHeader: {
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.lg,
-    paddingHorizontal: Spacing.xl,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
-  },
-  modalHandle: {
-    width: 36,
-    height: 4,
-    backgroundColor: Colors.textTertiary,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: Spacing.md,
-  },
-  modalHeaderContent: {
+  tipRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 12,
   },
-  modalTitle: {
-    fontSize: Typography.fontSize.xl,
-    fontWeight: '700' as any,
-    color: Colors.textPrimary,
-    fontFamily: Typography.fontFamily.primary,
-  },
-  modalCloseButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.surfaceSecondary,
+  tipBullet: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  modalContent: {
-    padding: Spacing.xl,
-    backgroundColor: 'transparent',
+  tipBulletText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
-  modalSubtitleContainer: {
-    alignItems: 'center',
-    marginBottom: Spacing['2xl'],
-    paddingHorizontal: Spacing.md,
+  tipText: {
+    flex: 1,
+    fontSize: 15,
+    lineHeight: 22,
   },
-  modalSubtitle: {
-    fontSize: Typography.fontSize.lg,
-    fontWeight: '700' as any,
-    color: Colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: Spacing.sm,
-    fontFamily: Typography.fontFamily.primary,
-  },
-  modalDescription: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: Typography.lineHeight.relaxed * Typography.fontSize.sm,
-    fontFamily: Typography.fontFamily.secondary,
-  },
-  // Slider styles
+  
+  // SMOOTH SLIDER STYLES
   sliderContainer: {
-    marginBottom: Spacing.xl,
-    paddingHorizontal: Spacing.md,
+    marginBottom: 32,
+    paddingHorizontal: 4,
   },
   sliderHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.lg,
+    marginBottom: 20,
   },
-  sliderLabel: {
-    fontSize: Typography.fontSize.lg,
-    fontWeight: '700' as any,
-    color: Colors.textPrimary,
-    fontFamily: Typography.fontFamily.primary,
-  },
-  sliderValueContainer: {
+  sliderLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
   },
-  sliderValue: {
-    fontSize: Typography.fontSize.xl,
-    fontWeight: '800' as any,
-    fontFamily: Typography.fontFamily.primary,
-    color: Colors.primary,
-  },
-  sliderUnit: {
-    fontSize: Typography.fontSize.md,
-    fontWeight: '600' as any,
-    fontFamily: Typography.fontFamily.primary,
-    color: Colors.primary + 'CC',
-    marginLeft: Spacing.xs,
-  },
-  sliderControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing.sm,
-  },
-  sliderButton: {
+  iconContainer: {
     width: 40,
     height: 40,
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginHorizontal: Spacing.sm,
   },
-  sliderButtonText: {
-    fontSize: Typography.fontSize.xl,
-    fontWeight: '700' as any,
-    fontFamily: Typography.fontFamily.primary,
+  labelText: {
+    fontSize: 17,
+    fontWeight: '700',
   },
-  sliderWrapper: {
+  valueChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 2,
+    gap: 4,
+  },
+  valueNumber: {
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  valueUnit: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  trackContainer: {
     position: 'relative',
-    height: 40,
+    height: 50,
     justifyContent: 'center',
-    marginBottom: Spacing.lg,
+    marginBottom: 12,
   },
-  sliderTrack: {
-    height: 8,
-    backgroundColor: Colors.surfaceSecondary,
-    borderRadius: 4,
-    position: 'relative',
+  trackWrapper: {
+    width: '100%',
+  },
+  track: {
+    height: 12,
+    borderRadius: 6,
+    overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  sliderFill: {
-    height: '100%',
-    borderRadius: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 2,
+    shadowRadius: 4,
     elevation: 2,
   },
-  sliderThumb: {
+  trackFill: {
+    height: '100%',
+    borderRadius: 6,
+  },
+  thumb: {
     position: 'absolute',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    top: 5,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
+    shadowOffset: { width: 0, height: 4 },
+  },
+  thumbInner: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  thumbDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  rangeLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  rangeLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  rangeDivider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    marginHorizontal: 16,
+  },
+  
+  // Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'flex-end',
+  },
+  premiumModal: {
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    minHeight: '75%',
+    maxHeight: '90%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 20,
+  },
+  modalHandle: {
+    width: 40,
+    height: 5,
+    borderRadius: 3,
+    alignSelf: 'center',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  premiumModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 24,
+  },
+  modalMainTitle: {
+    fontSize: 26,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  modalMainSubtitle: {
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  closeButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalScroll: {
+    flex: 1,
+  },
+  modalScrollContent: {
+    paddingHorizontal: 24,
+    paddingBottom: 20,
+  },
+  modalFooter: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 32,
+    borderTopWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  
+  // Input Sections
+  inputSection: {
+    marginBottom: 24,
+    padding: 20,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  inputHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 10,
+  },
+  inputIcon: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    top: -12,
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 8,
-  },
-  sliderLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: Spacing.sm,
-    paddingHorizontal: Spacing.xs,
-  },
-  sliderMinLabel: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
-    fontFamily: Typography.fontFamily.primary,
-    fontWeight: '600' as any,
-  },
-  sliderMaxLabel: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
-    fontFamily: Typography.fontFamily.primary,
-    fontWeight: '600' as any,
-  },
-  inputGroup: {
-    marginBottom: Spacing.xl,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  inputLabel: {
-    fontSize: Typography.fontSize.base,
-    fontWeight: '600' as any,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.md,
-    fontFamily: Typography.fontFamily.primary,
-  },
-  textInput: {
-    backgroundColor: Colors.surfaceSecondary,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: BorderRadius.lg,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-    fontSize: Typography.fontSize.base,
-    color: Colors.textPrimary,
-    fontFamily: Typography.fontFamily.secondary,
-  },
-  textArea: {
-    height: 80,
-    textAlignVertical: 'top',
-  },
-  modalButtonContainer: {
-    flexDirection: 'row',
-    gap: Spacing.md,
-    marginTop: Spacing.xl,
-    paddingBottom: Spacing.lg,
-  },
-  modalButton: {
-    flex: 1,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    alignItems: 'center',
     justifyContent: 'center',
-    ...Shadows.sm,
+    alignItems: 'center',
+  },
+  inputTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  modernTextArea: {
+    borderRadius: 16,
+    padding: 16,
+    fontSize: 15,
+    lineHeight: 22,
+    minHeight: 100,
+    textAlignVertical: 'top',
+    borderWidth: 2,
+  },
+  
+  // Button Group
+  buttonGroup: {
+    flexDirection: 'row',
+    gap: 12,
   },
   skipButton: {
-    backgroundColor: Colors.surfaceSecondary,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  analyzeButton: {
-    backgroundColor: Colors.primary,
+    flex: 1,
+    paddingVertical: 16,
+    borderRadius: 16,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   skipButtonText: {
-    fontSize: Typography.fontSize.base,
-    fontWeight: '600' as any,
-    color: Colors.textSecondary,
-    fontFamily: Typography.fontFamily.primary,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  analyzeButton: {
+    flex: 2,
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  analyzeButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 8,
   },
   analyzeButtonText: {
-    fontSize: Typography.fontSize.base,
-    fontWeight: '600' as any,
-    color: Colors.textInverse,
-    fontFamily: Typography.fontFamily.primary,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
-  bottomSpacing: {
-    height: Spacing['3xl'],
+  
+  // Welcome Modal Styles
+  welcomeModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  welcomeModalContent: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 24,
+    overflow: 'hidden',
+    ...Shadows.large,
+  },
+  welcomeCloseButton: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  welcomeModalHeader: {
+    paddingTop: 56,
+    paddingBottom: 28,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  welcomeIconContainer: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  welcomeModalBody: {
+    padding: 24,
+  },
+  welcomeTitle: {
+    fontSize: 26,
+    fontWeight: '800',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  welcomeMessage: {
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  welcomeFeatures: {
+    marginBottom: 24,
+  },
+  welcomeFeature: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  welcomeFeatureIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  welcomeFeatureText: {
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
+  },
+  welcomeNote: {
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: 24,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  welcomeActionButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    ...Shadows.medium,
+  },
+  welcomeActionGradient: {
+    flexDirection: 'row',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  welcomeActionText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });
 

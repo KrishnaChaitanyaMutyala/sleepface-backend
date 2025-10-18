@@ -250,8 +250,12 @@ export const AnalysisProvider: React.FC<AnalysisProviderProps> = ({ children }) 
     try {
       setIsLoading(true);
       
-      // Call the analysis service
-      const result = await analysisService.analyzeImage(imageUri, routineData);
+      // Get user_id from auth context
+      const userId = isGuest ? 'guest' : (user?.id || 'guest');
+      console.log('👤 [ANALYSIS CONTEXT] Using user_id:', userId);
+      
+      // Call the analysis service with user_id
+      const result = await analysisService.analyzeImage(imageUri, routineData, userId);
       
       // Add image URI to the result
       const resultWithImage = {

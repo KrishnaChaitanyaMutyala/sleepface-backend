@@ -15,6 +15,7 @@ interface AuthContextType {
   loginWithApple: () => Promise<void>;
   loginAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   updateUser: (userData: Partial<User>) => Promise<void>;
   refreshAccessToken: () => Promise<void>;
 }
@@ -335,6 +336,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const deleteAccount = async () => {
+    try {
+      setIsLoading(true);
+      
+      if (!accessToken) {
+        throw new Error('No access token available');
+      }
+      
+      // Call backend to delete account and all data
+      await authService.deleteAccount(accessToken);
+      
+      // Clear all local data
+      await clearAuthData();
+      const { storageService } = await import('../utils/storage');
+      await storageService.clear();
+      
+      console.log('✅ Account deleted successfully - all data cleared');
+    } catch (error) {
+      console.error('Delete account error:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const updateUser = async (userData: Partial<User>) => {
     if (user) {
       const updatedUser = { ...user, ...userData };
@@ -355,6 +381,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     loginWithApple,
     loginAsGuest,
     logout,
+    deleteAccount,
     updateUser,
     refreshAccessToken,
   };

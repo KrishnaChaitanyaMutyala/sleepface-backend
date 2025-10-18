@@ -5,32 +5,32 @@
 
 export const Colors = {
   // Primary Colors
-  primary: '#007AFF', // iOS Blue
+  primary: '#007AFF',      // iOS Blue (ORIGINAL)
   primaryDark: '#0056CC',
   primaryLight: '#4DA6FF',
   
   // Secondary Colors
-  secondary: '#5856D6', // iOS Purple
+  secondary: '#5856D6',    // iOS Purple (ORIGINAL)
   secondaryDark: '#3A39A3',
   secondaryLight: '#7B7AE5',
   
   // Accent Colors
-  accent: '#FF9500', // iOS Orange
+  accent: '#FF9500',       // iOS Orange (ORIGINAL)
   accentDark: '#CC7700',
   accentLight: '#FFB84D',
   
   // Success Colors
-  success: '#34C759', // iOS Green
+  success: '#34C759',      // iOS Green (ORIGINAL)
   successDark: '#2AA44A',
   successLight: '#5DD679',
   
   // Warning Colors
-  warning: '#FF9500', // iOS Orange
+  warning: '#FF9500',      // iOS Orange (ORIGINAL)
   warningDark: '#CC7700',
   warningLight: '#FFB84D',
   
   // Error Colors
-  error: '#FF3B30', // iOS Red
+  error: '#FF3B30',        // iOS Red (ORIGINAL)
   errorDark: '#CC2E26',
   errorLight: '#FF6B61',
   
@@ -99,6 +99,11 @@ export const Colors = {
   shadow: 'rgba(0, 0, 0, 0.4)',
   shadowDark: 'rgba(0, 0, 0, 0.6)',
   shadowLight: 'rgba(0, 0, 0, 0.2)',
+  
+  // Feature Colors (bright versions)
+  sleepBlue: '#3B82F6',    // Bright Blue - sleep theme
+  waterTeal: '#14B8A6',    // Bright Teal - hydration
+  fireOrange: '#FF6B35',   // Bright Orange - energy/streak
 };
 
 export const Typography = {
@@ -263,6 +268,48 @@ export const Icons = {
   sort: 'swap-vertical',
   menu: 'menu',
   more: 'ellipsis-horizontal',
+  check: 'checkmark',
+  
+  // Additional icons for components
+  sparkles: 'sparkles',
+  grid: 'grid',
+  zap: 'flash',
+  heart: 'heart',
+  star: 'star',
+  layers: 'layers',
+  sun: 'sunny',
+  droplet: 'water-outline',
+  moon: 'moon',
+  calendar: 'calendar',
+  lightbulb: 'bulb',
+  lock: 'lock-closed',
+  fire: 'flame',
+  trophy: 'trophy',
+  user: 'person',
+  'log-in': 'log-in',
+  'log-out': 'log-out',
+  'user-plus': 'person-add',
+  bell: 'notifications',
+  database: 'server',
+  'help-circle': 'help-circle',
+  'alert-triangle': 'alert',
+  'trash-2': 'trash',
+  award: 'medal',
+  target: 'radio-button-on',
+  'logo-google': 'logo-google',
+  'logo-apple': 'logo-apple',
+  'chevron-left': 'chevron-back',
+  'alert-circle': 'alert-circle',
+  'check-circle': 'checkmark-circle',
+  mail: 'mail',
+  smartphone: 'phone-portrait',
+  eye: 'eye',
+  'eye-off': 'eye-off',
+  flask: 'flask',
+  leaf: 'leaf',
+  checkmark: 'checkmark',
+  'camera-reverse': 'camera-reverse',
+  image: 'image',
 };
 
 // Score Colors

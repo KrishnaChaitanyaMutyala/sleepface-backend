@@ -8,6 +8,7 @@ import {
   Dimensions,
   Share,
   Alert,
+  Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
@@ -16,804 +17,1109 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { AnalysisResult } from '../types';
 import CustomIcon from '../components/CustomIcon';
-import { Colors, Typography, Spacing, BorderRadius, Shadows, getScoreColor, getScoreLabel, getFeatureLabel, getFeatureColor, getFeatureStatus, Gradients, getThemeColors, getThemeGradients, ButtonStyles } from '../design/DesignSystem';
+import { FeatureIcon } from '../components/FeatureIcon';
+import { stripEmojis } from '../utils/iconMapping';
+import { Colors, Typography, Spacing, BorderRadius, Shadows, getScoreColor, getScoreLabel, getFeatureLabel, getFeatureColor, getThemeColors } from '../design/DesignSystem';
 
-const { width } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
+// ============================================================================
+// ANIMATED CIRCULAR PROGRESS COMPONENT
+// ============================================================================
+const CircularProgress: React.FC<{
+  score: number;
+  size?: number;
+  strokeWidth?: number;
+  label: string;
+}> = ({ score, size = 140, strokeWidth = 10, label }) => {
+  const animatedValue = React.useRef(new Animated.Value(0)).current;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const strokeDashoffset = circumference - (circumference * score) / 100;
+  const color = getScoreColor(score);
+
+  React.useEffect(() => {
+    Animated.spring(animatedValue, {
+      toValue: score,
+      useNativeDriver: false,
+      tension: 40,
+      friction: 7,
+    }).start();
+  }, [score]);
+
+  return (
+    <View style={[styles.circularProgress, { width: size, height: size }]}>
+      {/* Background Circle */}
+      <View
+        style={[
+          styles.circularProgressBg,
+          {
+            width: size - strokeWidth,
+            height: size - strokeWidth,
+            borderRadius: (size - strokeWidth) / 2,
+            borderWidth: strokeWidth,
+            borderColor: color + '20',
+          },
+        ]}
+      />
+      
+      {/* Progress Circle */}
+      <View
+        style={[
+          styles.circularProgressFill,
+          {
+            width: size - strokeWidth,
+            height: size - strokeWidth,
+            borderRadius: (size - strokeWidth) / 2,
+            borderWidth: strokeWidth,
+            borderColor: color,
+          },
+        ]}
+      />
+
+      {/* Center Content */}
+      <View style={styles.circularProgressContent}>
+        <Text style={[styles.circularProgressScore, { color }]}>
+          {Math.round(score)}
+        </Text>
+        <Text style={styles.circularProgressLabel}>{label}</Text>
+        <Text style={[styles.circularProgressStatus, { color }]}>
+          {getScoreLabel(score)}
+        </Text>
+      </View>
+    </View>
+  );
+};
+
+// ============================================================================
+// FEATURE CARD COMPONENT
+// ============================================================================
+const FeatureCard: React.FC<{
+  feature: string;
+  value: number;
+  colors: any;
+}> = ({ feature, value, colors }) => {
+  const featureColor = getFeatureColor(value);
+  const percentage = Math.min(Math.max(value, 0), 100);
+
+  const getFeatureIcon = (feature: string): keyof typeof import('../design/DesignSystem').Icons => {
+    const icons: { [key: string]: keyof typeof import('../design/DesignSystem').Icons } = {
+      dark_circles: 'darkCircles',
+      puffiness: 'puffiness',
+      brightness: 'brightness',
+      wrinkles: 'wrinkles',
+      texture: 'texture',
+      pore_size: 'texture',
+    };
+    return icons[feature] || 'info';
+  };
+
+  const getFeatureStatus = (value: number) => {
+    if (value >= 80) return 'Excellent';
+    if (value >= 60) return 'Good';
+    if (value >= 40) return 'Fair';
+    return 'Needs Work';
+  };
+
+  return (
+    <View style={[styles.featureCard, { backgroundColor: colors.surface }]}>
+      <View style={styles.featureCardHeader}>
+        <View style={[styles.featureCardIcon, { backgroundColor: featureColor + '15' }]}>
+          <CustomIcon name={getFeatureIcon(feature)} size={24} color={featureColor} />
+        </View>
+        <View style={styles.featureCardInfo}>
+          <Text style={[styles.featureCardName, { color: colors.textPrimary }]}>
+            {getFeatureLabel(feature)}
+          </Text>
+          <Text style={[styles.featureCardStatus, { color: featureColor }]}>
+            {getFeatureStatus(value)}
+          </Text>
+        </View>
+        <View style={styles.featureCardScore}>
+          <Text style={[styles.featureCardScoreValue, { color: featureColor }]}>
+            {Math.round(value)}
+          </Text>
+          <Text style={[styles.featureCardScoreMax, { color: colors.textTertiary }]}>
+            /100
+          </Text>
+        </View>
+      </View>
+
+      {/* Progress Bar */}
+      <View style={[styles.featureCardBar, { backgroundColor: colors.surfaceSecondary }]}>
+        <LinearGradient
+          colors={[featureColor, featureColor + 'CC']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={[styles.featureCardBarFill, { width: `${percentage}%` }]}
+        />
+      </View>
+    </View>
+  );
+};
+
+// ============================================================================
+// MAIN ANALYSIS SCREEN COMPONENT
+// ============================================================================
 const AnalysisScreen: React.FC = () => {
   const navigation = useNavigation();
   const { isDark } = useTheme();
   const colors = getThemeColors(isDark);
-  const gradients = getThemeGradients(isDark);
   const { currentAnalysis } = useAnalysis();
   const { isGuest } = useAuth();
   const [summary, setSummary] = useState<any>(null);
+  const fadeAnim = React.useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (currentAnalysis) {
-      // Use the smart summary from the current analysis directly
       if (currentAnalysis.smart_summary) {
         setSummary(currentAnalysis.smart_summary);
       } else {
-        // Fallback: generate a basic summary from current analysis
         setSummary(generateBasicSummary(currentAnalysis));
       }
     }
+
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: true,
+    }).start();
   }, [currentAnalysis]);
 
   const generateBasicSummary = (analysis: AnalysisResult) => {
-    // Use AI-generated insights from backend if available
     if (analysis.smart_summary) {
-      console.log("🧠 Using AI-generated insights from backend");
       return {
         daily_summary: analysis.smart_summary.daily_summary || "Analysis completed successfully.",
         key_insights: analysis.smart_summary.key_insights || [],
         recommendations: analysis.smart_summary.recommendations || []
       };
     }
-    
-    // Generate detailed insights based on actual analysis data
-    console.log("⚠️ AI insights not available, generating detailed fallback");
+
     const sleepScore = analysis.sleep_score;
     const skinScore = analysis.skin_health_score;
-    const features = analysis.features;
-    const routine = analysis.routine;
-    
-    // Generate detailed daily summary
-    const overallHealth = (sleepScore + skinScore) / 2;
+    const avgScore = (sleepScore + skinScore) / 2;
+
     let dailySummary = "";
-    
-    if (overallHealth < 30) {
-      dailySummary = `Analysis Complete: Your Sleep Score (${sleepScore}/100) and Skin Health Score (${skinScore}/100) show great potential for improvement. We've identified some key areas where small lifestyle changes can make a big difference in how you look and feel.`;
-    } else if (overallHealth < 50) {
-      dailySummary = `Health Assessment: Your Sleep Score (${sleepScore}/100) and Skin Health Score (${skinScore}/100) show a good foundation with room to grow. Our analysis found specific opportunities to enhance your wellness and skin health.`;
-    } else if (overallHealth < 80) {
-      dailySummary = `Great Health Metrics: Your Sleep Score (${sleepScore}/100) and Skin Health Score (${skinScore}/100) show you're doing well! Our analysis confirms you're on the right track with potential for even better results.`;
+    if (avgScore >= 80) {
+      dailySummary = `Outstanding! Your Sleep Score (${sleepScore}) and Skin Health (${skinScore}) are excellent. Keep up your amazing routine!`;
+    } else if (avgScore >= 60) {
+      dailySummary = `Great progress! Your Sleep Score (${sleepScore}) and Skin Health (${skinScore}) show solid results with room for optimization.`;
+    } else if (avgScore >= 40) {
+      dailySummary = `Good foundation! Your Sleep Score (${sleepScore}) and Skin Health (${skinScore}) have potential for improvement with targeted care.`;
     } else {
-      dailySummary = `Outstanding Results: Your Sleep Score (${sleepScore}/100) and Skin Health Score (${skinScore}/100) are excellent! Our analysis shows you're maintaining fantastic health habits that are clearly working for you.`;
+      dailySummary = `Let's improve together! Your Sleep Score (${sleepScore}) and Skin Health (${skinScore}) can benefit from focused lifestyle adjustments.`;
     }
-    
-    // Generate detailed insights based on features
-    const insights = [];
-    
-    // Dark Circles Analysis
-    if (features.dark_circles < -50) {
-      insights.push("Under-Eye Area Focus: Your under-eye area shows room for improvement. Better sleep quality, increased hydration, and gentle eye care can help brighten this area.");
-    } else if (features.dark_circles < -20) {
-      insights.push("Under-Eye Enhancement: Your under-eye area has mild pigmentation that can be improved with consistent sleep, proper hydration, and targeted skincare.");
-    } else if (features.dark_circles > 20) {
-      insights.push("Excellent Under-Eye Area: Your orbital region looks bright and healthy. Your sleep patterns and circulation are working well for this area.");
-    }
-    
-    // Puffiness Analysis
-    if (features.puffiness < -50) {
-      insights.push("Eye Area Refresh: Your eye area shows some puffiness that can be reduced with better sleep position, reduced sodium intake, and gentle lymphatic massage.");
-    } else if (features.puffiness < -20) {
-      insights.push("Eye Area Care: Your eye area has mild puffiness that can be improved with adequate sleep, proper hydration, and gentle eye care techniques.");
-    } else if (features.puffiness > 20) {
-      insights.push("Perfect Eye Contour: Your eye area looks well-defined and refreshed. Your sleep and hydration habits are working great for this area.");
-    }
-    
-    // Skin Brightness Analysis
-    if (features.brightness < -50) {
-      insights.push("Skin Glow Enhancement: Your skin could benefit from more radiance. Regular exfoliation, increased hydration, and vitamin C can help bring back that healthy glow.");
-    } else if (features.brightness < -20) {
-      insights.push("Skin Brightness Boost: Your skin has room for more radiance. Gentle exfoliation, proper hydration, and antioxidant-rich products can enhance your natural glow.");
-    } else if (features.brightness > 20) {
-      insights.push("Beautiful Skin Radiance: Your complexion has a lovely natural glow. Your skincare routine and lifestyle habits are working perfectly for healthy, radiant skin.");
-    }
-    
-    // Wrinkle Analysis
-    if (features.wrinkles < -50) {
-      insights.push("Skin Smoothness Focus: Your skin could benefit from more smoothing treatments. Retinol, hyaluronic acid, and consistent sun protection can help improve skin texture.");
-    } else if (features.wrinkles < -20) {
-      insights.push("Skin Smoothness Enhancement: Your skin has some fine lines that can be improved with preventive skincare, proper hydration, and sun protection.");
-    } else if (features.wrinkles > 20) {
-      insights.push("Excellent Skin Smoothness: Your skin looks smooth and youthful. Your anti-aging routine and sun protection habits are working beautifully.");
-    }
-    
-    // Texture Analysis
-    if (features.texture < -50) {
-      insights.push("Skin Texture Improvement: Your skin could benefit from smoother texture. Gentle exfoliation, consistent moisturizing, and proper hydration can help create a more even surface.");
-    } else if (features.texture < -20) {
-      insights.push("Skin Texture Enhancement: Your skin has some texture that can be improved with regular exfoliation, proper hydration, and consistent skincare routine.");
-    } else if (features.texture > 20) {
-      insights.push("Beautiful Skin Texture: Your skin feels smooth and even. Your skincare routine and hydration habits are creating perfect skin texture.");
-    }
-    
-    // Pore Size Analysis
-    if (features.pore_size < -50) {
-      insights.push("Pore Refinement Focus: Your pores could benefit from tightening treatments. Niacinamide, retinol, and gentle exfoliation can help minimize pore appearance.");
-    } else if (features.pore_size < -20) {
-      insights.push("Pore Size Enhancement: Your pores have room for improvement. Consistent cleansing, pore-minimizing products, and proper hydration can help refine their appearance.");
-    } else if (features.pore_size > 20) {
-      insights.push("Excellent Pore Condition: Your pores look refined and well-maintained. Your skincare routine is working beautifully for pore health.");
-    }
-    
-    // Generate comprehensive recommendations
-    const recommendations = [];
-    
-    // Sleep Quality Recommendations
-    if (sleepScore < 30) {
-      recommendations.push("Sleep Optimization Protocol: Implement a 7-9 hour sleep schedule with consistent bedtime. Create a pre-sleep routine including 1-hour screen-free period, cool room temperature (65-68°F), and relaxation techniques.");
-      recommendations.push("Circadian Rhythm Reset: Establish consistent sleep-wake times, even on weekends. Use blue light blocking glasses 2 hours before bed and consider melatonin supplementation under medical supervision.");
-    } else if (sleepScore < 50) {
-      recommendations.push("Sleep Quality Improvement: Aim for 8 hours of uninterrupted sleep. Focus on sleep hygiene: avoid caffeine after 2 PM, limit alcohol consumption, and maintain regular exercise routine.");
-    } else if (sleepScore > 80) {
-      recommendations.push("Maintain Excellent Sleep Habits: Your sleep patterns are optimal. Continue your current routine and consider advanced sleep tracking to monitor REM cycles and deep sleep quality.");
-    }
-    
-    // Skin Health Recommendations
-    if (skinScore < 30) {
-      recommendations.push("Hydration Protocol: Increase water intake to 2.5-3 liters daily. Add electrolytes and consider hyaluronic acid supplements. Use a humidifier in your bedroom to maintain 40-60% humidity.");
-      recommendations.push("Skincare Foundation: Implement a basic routine: gentle cleanser (pH 5.5), broad-spectrum SPF 30+ sunscreen, and fragrance-free moisturizer. Apply products on damp skin to lock in moisture.");
-    } else if (skinScore < 50) {
-      recommendations.push("Targeted Skincare: Add vitamin C serum in the morning and retinol at night (start with 0.25% concentration). Use gentle chemical exfoliants 2-3 times weekly and maintain consistent routine.");
-    } else if (skinScore > 80) {
-      recommendations.push("Advanced Skincare Maintenance: Your skin health is excellent. Consider professional treatments like microdermabrasion or chemical peels for further enhancement. Maintain your current routine and add antioxidant serums for long-term protection.");
-    }
-    
-    // Feature-Specific Recommendations
-    if (features.dark_circles < -20) {
-      recommendations.push("Under-Eye Treatment: Use caffeine-based eye creams, cold compresses for 10 minutes daily, and consider professional treatments like PRP or dermal fillers for severe cases.");
-    }
-    
-    if (features.puffiness < -20) {
-      recommendations.push("Puffiness Reduction: Reduce sodium intake to <2g daily, elevate head while sleeping, use cold therapy, and consider lymphatic drainage massage.");
-    }
-    
-    if (features.brightness < -20) {
-      recommendations.push("Radiance Enhancement: Use vitamin C serum (15-20% L-ascorbic acid), gentle exfoliation with glycolic acid, and brightening ingredients like niacinamide, arbutin, or licorice root extract.");
-    }
-    
-    if (features.wrinkles < -20) {
-      recommendations.push("Anti-Aging Protocol: Start with retinol 0.25% twice weekly, increase to daily over 8 weeks. Use peptides, growth factors, and always apply SPF 50+ sunscreen.");
-    }
-    
-    if (features.texture < -20) {
-      recommendations.push("Texture Improvement: Use gentle chemical exfoliants (AHA/BHA) 2-3 times weekly, maintain consistent moisturization, and consider professional treatments like microdermabrasion or chemical peels.");
-    }
-    
-    if (features.pore_size < -20) {
-      recommendations.push("Pore Minimizing Protocol: Use niacinamide 4-5% twice daily, gentle BHA exfoliant 2-3 times weekly, and always apply non-comedogenic sunscreen. Consider professional treatments like microneedling for severe cases.");
-    }
-    
+
     return {
       daily_summary: dailySummary,
-      key_insights: insights,
-      recommendations: recommendations
+      key_insights: [
+        "Take daily selfies to track your progress",
+        "Maintain consistent sleep schedule for best results",
+        "Stay hydrated with 8+ glasses of water daily"
+      ],
+      recommendations: [
+        "Establish a regular bedtime routine",
+        "Use gentle skincare products suitable for your skin type",
+        "Protect your skin with SPF 30+ sunscreen daily"
+      ]
     };
   };
 
   if (!currentAnalysis) {
     return (
-      <View style={styles.container}>
-        <View style={styles.errorContainer}>
-          <CustomIcon name="warning" size={64} color={Colors.textTertiary} />
-          <Text style={styles.errorTitle}>No Analysis Data</Text>
-          <Text style={styles.errorText}>
-            Please take a selfie first to see your analysis results.
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.emptyState}>
+          <View style={[styles.emptyStateIcon, { backgroundColor: Colors.primary + '10' }]}>
+            <CustomIcon name="camera" size={64} color={Colors.primary} />
+          </View>
+          <Text style={[styles.emptyStateTitle, { color: colors.textPrimary }]}>
+            No Analysis Yet
           </Text>
+          <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>
+            Take your first selfie to see detailed analysis of your sleep and skin health
+          </Text>
+          <TouchableOpacity
+            style={styles.emptyStateCTA}
+            onPress={() => navigation.navigate('Camera' as never)}
+          >
+            <LinearGradient
+              colors={[Colors.primary, Colors.accent]}
+              style={styles.emptyStateCTAGradient}
+            >
+              <CustomIcon name="camera" size={20} color="#FFFFFF" />
+              <Text style={styles.emptyStateCTAText}>Take Selfie</Text>
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
       </View>
     );
   }
 
-  const getFeatureIcon = (feature: string) => {
-    const icons: { [key: string]: string } = {
-      dark_circles: 'darkCircles',
-      puffiness: 'puffiness',
-      brightness: 'brightness',
-      wrinkles: 'wrinkles',
-      texture: 'texture',
-      pore_size: 'pore_size',
-    };
-    return icons[feature] || 'info';
-  };
-
-  const getFeatureStatus = (value: number) => {
-    // Updated for 0-100 scale (higher is better)
-    if (value >= 80) return 'Excellent';
-    if (value >= 60) return 'Good';
-    if (value >= 40) return 'Fair';
-    if (value >= 20) return 'Room for Growth';
-    return 'Focus Area';
-  };
-
   const handleShare = async () => {
     try {
-      const shareContent = {
-        message: `My Sleep Face analysis: ${currentAnalysis.fun_label}\nSleep Score: ${currentAnalysis.sleep_score}\nSkin Health: ${currentAnalysis.skin_health_score}`,
+      await Share.share({
+        message: `My Sleep Face Analysis 😴✨\n\nSleep Score: ${currentAnalysis.sleep_score}/100\nSkin Health: ${currentAnalysis.skin_health_score}/100\nStatus: ${currentAnalysis.fun_label}\n\nTrack your wellness journey!`,
         title: 'Sleep Face Analysis',
-      };
-      
-      await Share.share(shareContent);
+      });
     } catch (error) {
       console.error('Error sharing:', error);
     }
   };
 
-  const handleSave = () => {
-    Alert.alert(
-      'Save Analysis',
-      'Your analysis has been saved to your history!',
-      [{ text: 'OK' }]
-    );
-  };
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
+    <ScrollView 
+      style={[styles.container, { backgroundColor: colors.background }]}
+      showsVerticalScrollIndicator={false}
+    >
+      {/* Premium Header */}
       <LinearGradient
-        colors={[colors.background, colors.background]}
-        style={styles.header}
+        colors={[Colors.primary, Colors.accent]}
+        style={styles.premiumHeader}
       >
-        <View style={styles.headerContent}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => navigation.navigate('MainTabs', { screen: 'Insights' } as never)}
+        <View style={styles.headerTop}>
+          <TouchableOpacity
+            style={styles.headerBackButton}
+            onPress={() => navigation.goBack()}
           >
-            <CustomIcon name="chevronLeft" size={24} color={colors.textPrimary} />
+            <CustomIcon name="chevronLeft" size={24} color="#FFFFFF" />
           </TouchableOpacity>
-          <View style={styles.headerText}>
-            <Text style={[styles.headerTitle, { color: Colors.primary }]}>Analysis Results</Text>
-            <Text style={[styles.headerSubtitle, { color: '#4DA6FF' }]}>
-              {new Date(currentAnalysis.date).toLocaleDateString()}
+
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>Analysis Results</Text>
+            <Text style={styles.headerDate}>
+              {new Date(currentAnalysis.date).toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'short',
+                day: 'numeric',
+              })}
             </Text>
           </View>
-          <View style={styles.headerSpacer} />
+
+          <TouchableOpacity style={styles.headerShareButton} onPress={handleShare}>
+            <CustomIcon name="share" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Status Badge */}
+        <View style={styles.statusBadge}>
+          <FeatureIcon 
+            status={currentAnalysis.fun_label} 
+            type="status" 
+            size={24} 
+            color="#FFFFFF" 
+          />
+          <Text style={styles.statusBadgeText}>
+            {currentAnalysis.fun_label.replace('_', ' ').toUpperCase()}
+          </Text>
         </View>
       </LinearGradient>
 
-      {/* Main Scores */}
-      <LinearGradient
-        colors={[Colors.primary + '10', Colors.accent + '10']}
-        style={styles.scoresCard}
-      >
-        <View style={styles.scoreContainer}>
-          <View style={styles.scoreItem}>
-            <Text style={[styles.scoreLabel, { color: colors.textSecondary }]}>Sleep Score</Text>
-            <Text style={[styles.scoreValue, { color: getScoreColor(currentAnalysis.sleep_score) }]}>
-              {currentAnalysis.sleep_score}
-            </Text>
-            <Text style={[styles.scoreDescription, { color: colors.textSecondary }]}>
-              {getScoreLabel(currentAnalysis.sleep_score)}
-            </Text>
-          </View>
-          <View style={styles.scoreDivider} />
-          <View style={styles.scoreItem}>
-            <Text style={[styles.scoreLabel, { color: colors.textSecondary }]}>Skin Health</Text>
-            <Text style={[styles.scoreValue, { color: getScoreColor(currentAnalysis.skin_health_score) }]}>
-              {currentAnalysis.skin_health_score}
-            </Text>
-            <Text style={[styles.scoreDescription, { color: colors.textSecondary }]}>
-              {getScoreLabel(currentAnalysis.skin_health_score)}
-            </Text>
-          </View>
-        </View>
-        <Text style={[styles.funLabel, { color: colors.textPrimary }]}>{currentAnalysis.fun_label}</Text>
-      </LinearGradient>
-
-
-      {/* Feature Breakdown */}
-      <LinearGradient
-        colors={[Colors.primary + '10', Colors.accent + '10']}
-        style={styles.featuresCard}
-      >
-        <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Feature Analysis</Text>
-        {Object.entries(currentAnalysis.features).map(([feature, value]) => (
-          <View key={feature} style={styles.featureItem}>
-            <View style={styles.featureHeader}>
-              <View style={styles.featureIconContainer}>
-                <CustomIcon 
-                  name={getFeatureIcon(feature) as any} 
-                  size={20} 
-                  color={getFeatureColor(value, feature)} 
-                />
-              </View>
-              <Text style={[styles.featureName, { color: colors.textPrimary }]}>
-                {getFeatureLabel(feature)}
-              </Text>
-              <View style={styles.featureValueContainer}>
-                <Text style={[styles.featureValue, { color: getFeatureColor(value, feature) }]}>
-                  {value.toFixed(1)}
-                </Text>
-                <Text style={[styles.featureStatus, { color: getFeatureColor(value, feature) }]}>
-                  {getFeatureStatus(value)}
-                </Text>
-              </View>
-            </View>
-            <View style={styles.featureBar}>
-              <View 
-                  style={[
-                  styles.featureBarFill,
-                  {
-                    width: `${Math.min(value, 100)}%`,
-                    backgroundColor: getFeatureColor(value, feature),
-                  }
-                ]}
-              />
-            </View>
-          </View>
-        ))}
-      </LinearGradient>
-
-      {/* Routine Data */}
-      {currentAnalysis.routine && (
-        <LinearGradient
-          colors={[Colors.primary + '10', Colors.accent + '10']}
-          style={styles.routineCard}
-        >
-          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Your Daily Routine</Text>
-          <View style={styles.routineContent}>
-            {currentAnalysis.routine.sleep_hours && (
-              <View style={styles.routineItem}>
-                <CustomIcon name="sleep" size={20} color={Colors.primary} />
-                <Text style={[styles.routineLabel, { color: colors.textSecondary }]}>Sleep Hours</Text>
-                <Text style={[styles.routineValue, { color: colors.textPrimary }]}>
-                  {currentAnalysis.routine.sleep_hours}h
-                </Text>
-              </View>
-            )}
-            {currentAnalysis.routine.water_intake && (
-              <View style={styles.routineItem}>
-                <CustomIcon name="waterGlass" size={20} color={Colors.primary} />
-                <Text style={[styles.routineLabel, { color: colors.textSecondary }]}>Water Intake</Text>
-                <Text style={[styles.routineValue, { color: colors.textPrimary }]}>
-                  {currentAnalysis.routine.water_intake} glasses
-                </Text>
-              </View>
-            )}
-            {currentAnalysis.routine.product_used && (
-              <View style={styles.routineItem}>
-                <CustomIcon name="serum" size={20} color={Colors.primary} />
-                <Text style={[styles.routineLabel, { color: colors.textSecondary }]}>Product Used</Text>
-                <Text style={[styles.routineValue, { color: colors.textPrimary }]}>
-                  {currentAnalysis.routine.product_used}
-                </Text>
-              </View>
-            )}
-            {currentAnalysis.routine.daily_note && (
-              <View style={styles.routineItem}>
-                <CustomIcon name="info" size={20} color={Colors.primary} />
-                <Text style={[styles.routineLabel, { color: colors.textSecondary }]}>Daily Note</Text>
-                <Text style={[styles.routineValue, { color: colors.textPrimary }]}>
-                  {currentAnalysis.routine.daily_note}
-                </Text>
-              </View>
-            )}
-          </View>
-        </LinearGradient>
-      )}
-
-      {/* Current Analysis */}
-      {summary && (
-        <LinearGradient
-          colors={[Colors.primary + '10', Colors.accent + '10']}
-          style={styles.summaryCard}
-        >
-          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Current Analysis</Text>
-          <Text style={[styles.summaryText, { color: colors.textPrimary }]}>{summary.daily_summary}</Text>
+      <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
+        {/* Score Rings */}
+        <View style={[styles.scoresSection, { backgroundColor: colors.surface }]}>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+            Your Scores
+          </Text>
           
-          {summary.key_insights.length > 0 && (
-            <View style={styles.insightsContainer}>
-              <Text style={[styles.insightsTitle, { color: colors.textPrimary }]}>Current Insights:</Text>
-              {summary.key_insights.map((insight: any, index: number) => (
-                <Text key={index} style={[styles.insightItem, { color: colors.textSecondary }]}>
-                  • {insight}
-                </Text>
-              ))}
-            </View>
-          )}
-
-          {summary.recommendations.length > 0 && (
-            <View style={styles.recommendationsContainer}>
-              <Text style={[styles.recommendationsTitle, { color: colors.textPrimary }]}>Recommendations:</Text>
-              {summary.recommendations.map((recommendation: any, index: number) => (
-                <Text key={index} style={[styles.recommendationItem, { color: colors.textSecondary }]}>
-                  • {recommendation}
-                </Text>
-              ))}
-            </View>
-          )}
-        </LinearGradient>
-      )}
-
-      {/* Action Buttons */}
-      <View style={styles.actionsContainer}>
-        <TouchableOpacity style={ButtonStyles.successFlex} onPress={handleSave}>
-          <CustomIcon name="save" size={20} color={Colors.textInverse} />
-          <Text style={ButtonStyles.text.success}>Save Analysis</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={ButtonStyles.secondaryFlex} onPress={handleShare}>
-          <CustomIcon name="share" size={20} color={Colors.primary} />
-          <Text style={ButtonStyles.text.secondary}>Share</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Guest Registration Prompt */}
-      {isGuest && (
-        <View style={styles.guestPromptCard}>
-          <LinearGradient
-            colors={[Colors.primary + '10', Colors.accent + '10']}
-            style={styles.guestPromptGradient}
-          >
-            <View style={styles.guestPromptIcon}>
-              <CustomIcon name="analytics" size={28} color={Colors.primary} />
-            </View>
-            <Text style={[styles.guestPromptTitle, { color: colors.textPrimary }]}>Unlock Full Features</Text>
-            <Text style={[styles.guestPromptText, { color: colors.textSecondary }]}>
-              Register to save your analysis history, track progress over time, and get personalized weekly insights!
-            </Text>
-               <TouchableOpacity
-                 style={styles.registerButton}
-                 onPress={() => {
-                   navigation.navigate('Register' as never);
-                 }}
-               >
-                 <LinearGradient
-                   colors={Gradients.primary as any}
-                   style={styles.registerButtonGradient}
-                 >
-                   <Text style={styles.registerButtonText}>Register Now</Text>
-                 </LinearGradient>
-               </TouchableOpacity>
-          </LinearGradient>
+          <View style={styles.scoreRingsContainer}>
+            <CircularProgress
+              score={currentAnalysis.sleep_score}
+              label="Sleep"
+              size={140}
+            />
+            <CircularProgress
+              score={currentAnalysis.skin_health_score}
+              label="Skin"
+              size={140}
+            />
+          </View>
         </View>
-      )}
+
+        {/* Features Grid */}
+        <View style={styles.featuresSection}>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionIcon, { backgroundColor: Colors.primary + '15' }]}>
+              <CustomIcon name="analytics" size={20} color={Colors.primary} />
+            </View>
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+              Detailed Analysis
+            </Text>
+          </View>
+
+          <View style={styles.featuresGrid}>
+            {Object.entries(currentAnalysis.features).map(([feature, value]) => (
+              <FeatureCard
+                key={feature}
+                feature={feature}
+                value={value}
+                colors={colors}
+              />
+            ))}
+          </View>
+        </View>
+
+        {/* Routine Info */}
+        {currentAnalysis.routine && (
+          <View style={[styles.routineSection, { backgroundColor: colors.surface }]}>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionIcon, { backgroundColor: Colors.accent + '15' }]}>
+                <CustomIcon name="calendar" size={20} color={Colors.accent} />
+              </View>
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+                Daily Routine
+              </Text>
+            </View>
+
+            <View style={styles.routineGrid}>
+              {currentAnalysis.routine.sleep_hours && (
+                <View style={[styles.routineItem, { backgroundColor: colors.surfaceSecondary }]}>
+                  <View style={[styles.routineIconContainer, { backgroundColor: '#5B8DEF15' }]}>
+                    <CustomIcon name="moon" size={20} color="#5B8DEF" />
+                  </View>
+                  <View style={styles.routineContent}>
+                    <Text style={[styles.routineLabel, { color: colors.textTertiary }]}>
+                      Sleep
+                    </Text>
+                    <Text style={[styles.routineValue, { color: colors.textPrimary }]}>
+                      {currentAnalysis.routine.sleep_hours}h
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {currentAnalysis.routine.water_intake && (
+                <View style={[styles.routineItem, { backgroundColor: colors.surfaceSecondary }]}>
+                  <View style={[styles.routineIconContainer, { backgroundColor: '#4ECDC415' }]}>
+                    <CustomIcon name="droplet" size={20} color="#4ECDC4" />
+                  </View>
+                  <View style={styles.routineContent}>
+                    <Text style={[styles.routineLabel, { color: colors.textTertiary }]}>
+                      Water
+                    </Text>
+                    <Text style={[styles.routineValue, { color: colors.textPrimary }]}>
+                      {currentAnalysis.routine.water_intake} glasses
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {currentAnalysis.routine.skincare_products && 
+               currentAnalysis.routine.skincare_products.length > 0 && (
+                <View style={[styles.routineItemFull, { backgroundColor: colors.surfaceSecondary }]}>
+                  <View style={[styles.routineIconContainer, { backgroundColor: '#A78BFA15' }]}>
+                    <CustomIcon name="sparkles" size={20} color="#A78BFA" />
+                  </View>
+                  <View style={styles.routineContent}>
+                    <Text style={[styles.routineLabel, { color: colors.textTertiary }]}>
+                      Products Used
+                    </Text>
+                    <Text style={[styles.routineValue, { color: colors.textPrimary }]}>
+                      {currentAnalysis.routine.skincare_products.join(', ')}
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* Insights & Recommendations */}
+        {summary && (
+          <View style={[styles.insightsSection, { backgroundColor: colors.surface }]}>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionIcon, { backgroundColor: Colors.success + '15' }]}>
+                <CustomIcon name="lightbulb" size={20} color={Colors.success} />
+              </View>
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+                AI Insights
+              </Text>
+            </View>
+
+            {/* Summary */}
+            <View style={[styles.summaryBox, { backgroundColor: Colors.primary + '10' }]}>
+              <Text style={[styles.summaryText, { color: colors.textPrimary }]}>
+                {summary.daily_summary}
+              </Text>
+            </View>
+
+            {/* Key Insights */}
+            {summary.key_insights && summary.key_insights.length > 0 && (
+              <View style={styles.insightsList}>
+                <Text style={[styles.insightsSubtitle, { color: colors.textPrimary }]}>
+                  Key Insights
+                </Text>
+                {summary.key_insights.map((insight: string, index: number) => (
+                  <View key={index} style={styles.insightRow}>
+                    <View style={[styles.insightDot, { backgroundColor: Colors.primary }]} />
+                    <Text style={[styles.insightText, { color: colors.textSecondary }]}>
+                      {stripEmojis(insight)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Natural Remedies Section */}
+            {summary.natural_remedies && summary.natural_remedies.length > 0 && (
+              <View style={styles.recommendationsList}>
+                <View style={styles.recommendationHeader}>
+                  <View style={[styles.recommendationHeaderIcon, { backgroundColor: Colors.success + '15' }]}>
+                    <CustomIcon name="leaf" size={16} color={Colors.success} />
+                  </View>
+                  <Text style={[styles.recommendationsSubtitle, { color: colors.textPrimary }]}>
+                    Natural Remedies
+                  </Text>
+                </View>
+                {summary.natural_remedies.map((rec: string, index: number) => (
+                  <View key={index} style={styles.recommendationRow}>
+                    <View style={[styles.recommendationCheck, { backgroundColor: Colors.success + '20' }]}>
+                      <CustomIcon name="checkmark" size={12} color={Colors.success} />
+                    </View>
+                    <Text style={[styles.recommendationText, { color: colors.textSecondary }]}>
+                      {stripEmojis(rec)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Product Recommendations Section */}
+            {summary.product_recommendations && summary.product_recommendations.length > 0 && (
+              <View style={styles.recommendationsList}>
+                <View style={styles.recommendationHeader}>
+                  <View style={[styles.recommendationHeaderIcon, { backgroundColor: Colors.primary + '15' }]}>
+                    <CustomIcon name="flask" size={16} color={Colors.primary} />
+                  </View>
+                  <Text style={[styles.recommendationsSubtitle, { color: colors.textPrimary }]}>
+                    Product Recommendations
+                  </Text>
+                </View>
+                {summary.product_recommendations.map((rec: string, index: number) => (
+                  <View key={index} style={styles.recommendationRow}>
+                    <View style={[styles.recommendationCheck, { backgroundColor: Colors.primary + '20' }]}>
+                      <CustomIcon name="checkmark" size={12} color={Colors.primary} />
+                    </View>
+                    <Text style={[styles.recommendationText, { color: colors.textSecondary }]}>
+                      {stripEmojis(rec)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Lifestyle Tip Section */}
+            {summary.lifestyle_tip && (
+              <View style={styles.recommendationsList}>
+                <View style={styles.recommendationHeader}>
+                  <View style={[styles.recommendationHeaderIcon, { backgroundColor: Colors.accent + '15' }]}>
+                    <CustomIcon name="heart" size={16} color={Colors.accent} />
+                  </View>
+                  <Text style={[styles.recommendationsSubtitle, { color: colors.textPrimary }]}>
+                    Lifestyle Tip
+                  </Text>
+                </View>
+                <View style={styles.recommendationRow}>
+                  <View style={[styles.recommendationCheck, { backgroundColor: Colors.accent + '20' }]}>
+                    <CustomIcon name="checkmark" size={12} color={Colors.accent} />
+                  </View>
+                  <Text style={[styles.recommendationText, { color: colors.textSecondary }]}>
+                    {stripEmojis(summary.lifestyle_tip)}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Medical Disclaimer */}
+            <View style={[styles.disclaimerBox, { backgroundColor: Colors.warning + '10', borderColor: Colors.warning + '30' }]}>
+              <View style={styles.disclaimerHeader}>
+                <CustomIcon name="alert-triangle" size={18} color={Colors.warning} />
+                <Text style={[styles.disclaimerTitle, { color: Colors.warning }]}>
+                  Important Notice
+                </Text>
+              </View>
+              <Text style={[styles.disclaimerText, { color: colors.textSecondary }]}>
+                These recommendations are AI-generated for informational purposes only and are not a substitute for professional medical advice. 
+                Always consult with a dermatologist or healthcare provider before trying new skincare products or treatments. 
+                SleepFace is not responsible for any results or reactions from following these suggestions.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Action Buttons */}
+        <View style={styles.actionsSection}>
+          <TouchableOpacity
+            style={styles.shareAction}
+            onPress={handleShare}
+          >
+            <LinearGradient
+              colors={[Colors.primary, Colors.accent]}
+              style={styles.actionGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+            >
+              <CustomIcon name="share" size={20} color="#FFFFFF" />
+              <Text style={styles.actionText}>Share Results</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+
+        {/* Guest Prompt */}
+        {isGuest && (
+          <View style={[styles.guestPrompt, { backgroundColor: colors.surface }]}>
+            <LinearGradient
+              colors={[Colors.primary + '10', Colors.accent + '10']}
+              style={styles.guestPromptGradient}
+            >
+              <View style={[styles.guestPromptIcon, { backgroundColor: Colors.primary + '20' }]}>
+                <CustomIcon name="lock" size={32} color={Colors.primary} />
+              </View>
+              <Text style={[styles.guestPromptTitle, { color: colors.textPrimary }]}>
+                Unlock Full History
+              </Text>
+              <Text style={[styles.guestPromptText, { color: colors.textSecondary }]}>
+                Register to save all your analyses, track progress over time, and get personalized weekly insights
+              </Text>
+              <TouchableOpacity
+                style={styles.guestPromptCTA}
+                onPress={() => navigation.navigate('Register' as never)}
+              >
+                <LinearGradient
+                  colors={[Colors.primary, Colors.accent]}
+                  style={styles.guestPromptCTAGradient}
+                >
+                  <CustomIcon name="sparkles" size={18} color="#FFFFFF" />
+                  <Text style={styles.guestPromptCTAText}>Register Now</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </LinearGradient>
+          </View>
+        )}
+      </Animated.View>
+
+      <View style={{ height: 40 }} />
     </ScrollView>
   );
 };
 
+// ============================================================================
+// STYLES
+// ============================================================================
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
   },
-  header: {
+  
+  // Premium Header
+  premiumHeader: {
     paddingTop: 60,
-    paddingBottom: 30,
-    paddingHorizontal: Spacing.lg,
+    paddingBottom: 24,
+    paddingHorizontal: 20,
   },
-  headerContent: {
+  headerTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginBottom: 20,
   },
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    alignItems: 'center',
+  headerBackButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
+    alignItems: 'center',
   },
-  headerText: {
+  headerCenter: {
     flex: 1,
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: Typography.fontSize.xl,
-    fontWeight: '700' as any,
-    color: '#007AFF',
-    fontFamily: Typography.fontFamily.primary,
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: Typography.fontSize.sm,
-    color: '#4DA6FF',
-    fontFamily: Typography.fontFamily.secondary,
-  },
-  headerSpacer: {
-    width: 44,
-    height: 44,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  errorTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1F2937',
-    marginTop: 16,
-    marginBottom: 8,
-    fontFamily: 'BalooBhaijaan2-Regular',
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
-  errorText: {
-    fontSize: 16,
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 24,
-    fontFamily: 'BalooBhaijaan2-Regular',
-  },
-  scoresCard: {
-    margin: Spacing.lg,
-    marginTop: -Spacing.sm,
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.lg,
-    borderWidth: 1,
-    borderColor: Colors.primary + '20',
-    ...Shadows.md,
-  },
-  scoreContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: Spacing.md,
-  },
-  scoreItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  scoreLabel: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.sm,
-    fontFamily: Typography.fontFamily.secondary,
-  },
-  scoreValue: {
-    fontSize: Typography.fontSize['5xl'],
-    fontWeight: 'bold' as any,
-    marginBottom: Spacing.xs,
-    fontFamily: Typography.fontFamily.primary,
-  },
-  scoreDescription: {
-    fontSize: Typography.fontSize.xs,
-    color: Colors.textSecondary,
-    fontFamily: Typography.fontFamily.secondary,
-  },
-  scoreDivider: {
-    width: 1,
-    backgroundColor: Colors.borderLight,
-    marginHorizontal: Spacing.lg,
-  },
-  funLabel: {
-    fontSize: Typography.fontSize.lg,
-    fontWeight: 'bold' as any,
-    color: Colors.primary,
-    textAlign: 'center',
-    fontFamily: Typography.fontFamily.primary,
-  },
-  featuresCard: {
-    margin: Spacing.lg,
-    marginTop: 0,
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.lg,
-    borderWidth: 1,
-    borderColor: Colors.primary + '20',
-    ...Shadows.md,
-  },
-  cardTitle: {
-    fontSize: Typography.fontSize.xl,
-    fontWeight: 'bold' as any,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.md,
-    fontFamily: Typography.fontFamily.primary,
-  },
-  featureItem: {
-    marginBottom: Spacing.md,
-  },
-  featureHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing.sm,
-  },
-  featureIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.surfaceSecondary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: Spacing.md,
-  },
-  featureName: {
-    flex: 1,
-    fontSize: Typography.fontSize.base,
-    color: Colors.textPrimary,
-    fontFamily: Typography.fontFamily.primary,
-  },
-  featureValueContainer: {
-    alignItems: 'flex-end',
-  },
-  featureValue: {
-    fontSize: Typography.fontSize.base,
-    fontWeight: '700' as any,
-    fontFamily: Typography.fontFamily.primary,
-  },
-  featureStatus: {
-    fontSize: Typography.fontSize.xs,
-    fontWeight: '500' as any,
-    fontFamily: Typography.fontFamily.secondary,
+  headerDate: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.8)',
     marginTop: 2,
   },
-  featureBar: {
-    height: 4,
-    backgroundColor: Colors.borderLight,
-    borderRadius: BorderRadius.sm,
+  headerShareButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    alignSelf: 'center',
+  },
+  statusBadgeText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  
+  // Content
+  content: {
+    paddingTop: 20,
+  },
+  
+  // Scores Section
+  scoresSection: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 20,
+  },
+  scoreRingsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  
+  // Circular Progress
+  circularProgress: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  circularProgressBg: {
+    position: 'absolute',
+  },
+  circularProgressFill: {
+    position: 'absolute',
+  },
+  circularProgressContent: {
+    alignItems: 'center',
+  },
+  circularProgressScore: {
+    fontSize: 36,
+    fontWeight: '800',
+  },
+  circularProgressLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginTop: 4,
+  },
+  circularProgressStatus: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  
+  // Features Section
+  featuresSection: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  sectionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  featuresGrid: {
+    gap: 12,
+  },
+  featureCard: {
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  featureCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  featureCardIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  featureCardInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  featureCardName: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  featureCardStatus: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  featureCardScore: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  featureCardScoreValue: {
+    fontSize: 24,
+    fontWeight: '800',
+  },
+  featureCardScoreMax: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  featureCardBar: {
+    height: 8,
+    borderRadius: 4,
     overflow: 'hidden',
   },
-  featureBarFill: {
+  featureCardBarFill: {
     height: '100%',
-    borderRadius: BorderRadius.sm,
+    borderRadius: 4,
   },
-  routineCard: {
-    margin: Spacing.lg,
-    marginTop: 0,
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.lg,
-    borderWidth: 1,
-    borderColor: Colors.primary + '20',
-    ...Shadows.md,
+  
+  // Routine Section
+  routineSection: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    borderRadius: 24,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 6,
   },
-  routineContent: {
-    marginTop: Spacing.md,
+  routineGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
   },
   routineItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: Spacing.md,
-    paddingVertical: Spacing.sm,
+    flex: 1,
+    minWidth: '47%',
+    padding: 16,
+    borderRadius: 12,
+    gap: 12,
+  },
+  routineItemFull: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    padding: 16,
+    borderRadius: 12,
+    gap: 12,
+  },
+  routineIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  routineContent: {
+    flex: 1,
   },
   routineLabel: {
-    flex: 1,
-    fontSize: Typography.fontSize.base,
-    fontWeight: '600' as any,
-    color: Colors.textPrimary,
-    fontFamily: Typography.fontFamily.primary,
-    marginLeft: Spacing.sm,
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 2,
   },
   routineValue: {
-    fontSize: Typography.fontSize.base,
-    fontWeight: '700' as any,
-    color: Colors.primary,
-    fontFamily: Typography.fontFamily.primary,
+    fontSize: 16,
+    fontWeight: '700',
   },
-  summaryCard: {
-    margin: Spacing.lg,
-    marginTop: 0,
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.lg,
-    borderWidth: 1,
-    borderColor: Colors.primary + '20',
-    ...Shadows.md,
+  
+  // Insights Section
+  insightsSection: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    borderRadius: 24,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  summaryBox: {
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
   },
   summaryText: {
-    fontSize: Typography.fontSize.base,
-    color: Colors.textPrimary,
-    lineHeight: Typography.lineHeight.relaxed * Typography.fontSize.base,
-    marginBottom: Spacing.md,
-    fontFamily: Typography.fontFamily.secondary,
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '500',
   },
-  insightsContainer: {
-    marginBottom: Spacing.md,
+  insightsList: {
+    marginBottom: 20,
   },
-  insightsTitle: {
-    fontSize: Typography.fontSize.base,
-    fontWeight: '600' as any,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.sm,
-    fontFamily: Typography.fontFamily.primary,
+  insightsSubtitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 12,
   },
-  insightItem: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.xs,
-    fontFamily: Typography.fontFamily.secondary,
-  },
-  recommendationsContainer: {
-    marginTop: Spacing.sm,
-  },
-  recommendationsTitle: {
-    fontSize: Typography.fontSize.base,
-    fontWeight: '600' as any,
-    color: Colors.textPrimary,
-    marginBottom: Spacing.sm,
-    fontFamily: Typography.fontFamily.primary,
-  },
-  recommendationItem: {
-    fontSize: Typography.fontSize.sm,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.xs,
-    fontFamily: Typography.fontFamily.secondary,
-  },
-  actionsContainer: {
+  insightRow: {
     flexDirection: 'row',
-    margin: Spacing.lg,
-    marginTop: 0,
-    gap: Spacing.md,
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 10,
   },
-  actionButton: {
+  insightDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginTop: 7,
+  },
+  insightText: {
     flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
   },
-  actionButtonGradient: {
+  recommendationsList: {
+    marginBottom: 16,
+  },
+  recommendationHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.lg,
+    marginBottom: 12,
+    gap: 8,
   },
-  actionButtonSecondary: {
-    flexDirection: 'row',
+  recommendationHeaderIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
     alignItems: 'center',
+  },
+  recommendationsSubtitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  recommendationRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 10,
+  },
+  recommendationCheck: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     justifyContent: 'center',
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    backgroundColor: Colors.surface,
-    borderWidth: 2,
-    borderColor: Colors.primary,
+    alignItems: 'center',
+    marginTop: 2,
   },
-  actionButtonText: {
-    color: Colors.textInverse,
-    fontSize: Typography.fontSize.base,
-    fontWeight: '600' as any,
-    marginLeft: Spacing.sm,
-    fontFamily: Typography.fontFamily.primary,
+  recommendationText: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
   },
-  actionButtonTextSecondary: {
-    color: Colors.primary,
-    fontSize: Typography.fontSize.base,
-    fontWeight: '600' as any,
-    marginLeft: Spacing.sm,
-    fontFamily: Typography.fontFamily.primary,
-  },
-  // Guest prompt styles
-  guestPromptCard: {
-    margin: Spacing.lg,
-    borderRadius: BorderRadius['2xl'],
-    overflow: 'hidden',
-    ...Shadows.lg,
+  
+  // Disclaimer
+  disclaimerBox: {
+    marginTop: 20,
+    padding: 16,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.primary + '20',
+  },
+  disclaimerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  disclaimerTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  disclaimerText: {
+    fontSize: 12,
+    lineHeight: 18,
+    fontStyle: 'italic',
+  },
+  
+  // Actions
+  actionsSection: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+  },
+  shareAction: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  actionGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 8,
+  },
+  actionText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  secondaryAction: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 16,
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  secondaryActionText: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  
+  // Guest Prompt
+  guestPrompt: {
+    marginHorizontal: 20,
+    borderRadius: 24,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 6,
   },
   guestPromptGradient: {
-    padding: Spacing.xl,
+    padding: 32,
     alignItems: 'center',
   },
   guestPromptIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: Colors.primary + '15',
-    alignItems: 'center',
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     justifyContent: 'center',
-    marginBottom: Spacing.lg,
+    alignItems: 'center',
+    marginBottom: 20,
   },
   guestPromptTitle: {
-    fontSize: Typography.fontSize.xl,
-    fontWeight: '700' as any,
-    color: Colors.textPrimary,
+    fontSize: 22,
+    fontWeight: '800',
     textAlign: 'center',
-    marginBottom: Spacing.sm,
-    fontFamily: Typography.fontFamily.primary,
+    marginBottom: 8,
   },
   guestPromptText: {
-    fontSize: Typography.fontSize.base,
-    color: Colors.textSecondary,
+    fontSize: 14,
     textAlign: 'center',
-    lineHeight: Typography.lineHeight.relaxed * Typography.fontSize.base,
-    marginBottom: Spacing.xl,
-    fontFamily: Typography.fontFamily.secondary,
+    lineHeight: 20,
+    marginBottom: 24,
   },
-  registerButton: {
-    borderRadius: BorderRadius.lg,
+  guestPromptCTA: {
+    borderRadius: 16,
     overflow: 'hidden',
-    marginTop: Spacing.lg,
-    ...Shadows.sm,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  registerButtonGradient: {
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
+  guestPromptCTAGradient: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    gap: 8,
   },
-  registerButtonText: {
-    color: Colors.textInverse,
-    fontSize: Typography.fontSize.base,
-    fontWeight: '700' as any,
-    fontFamily: Typography.fontFamily.primary,
+  guestPromptCTAText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  
+  // Empty State
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyStateIcon: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  emptyStateTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptyStateText: {
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 32,
+  },
+  emptyStateCTA: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  emptyStateCTAGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    gap: 10,
+  },
+  emptyStateCTAText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });
 

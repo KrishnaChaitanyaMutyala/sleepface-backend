@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from contextlib import asynccontextmanager
 import uvicorn
 import os
 from dotenv import load_dotenv
@@ -31,10 +32,28 @@ load_dotenv()
 # Initialize LLM service after environment variables are loaded
 llm_service = FlexibleLLMService()
 
+# Lifespan event handler for startup/shutdown
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    try:
+        # Set up MongoDB connection for historical_data_service
+        db = await get_database()
+        historical_data_service.set_database(db)
+        print("✅ [STARTUP] Historical data service connected to MongoDB")
+    except Exception as e:
+        print(f"⚠️ [STARTUP] Failed to connect historical data service to MongoDB: {e}")
+    
+    yield
+    
+    # Shutdown (if needed)
+    print("👋 [SHUTDOWN] Cleaning up...")
+
 app = FastAPI(
     title="Sleep Face API",
     description="AI-powered sleep and skin health tracking API",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # CORS middleware for React Native
@@ -130,6 +149,58 @@ async def update_user_profile(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update profile: {str(e)}")
+
+@app.delete("/auth/delete-account")
+async def delete_user_account(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """Permanently delete user account and all associated data (GDPR/CCPA Compliance)"""
+    try:
+        # Verify token and get user data
+        payload = verify_token(credentials)
+        user_id = payload.get("uid") or payload.get("user_id")
+        
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        print(f"🗑️ [DELETE ACCOUNT] User {user_id} requested account deletion")
+        
+        db = await get_database()
+        
+        # Delete all user's analyses
+        analyses_result = await db.analyses.delete_many({"user_id": user_id})
+        print(f"🗑️ [DELETE ACCOUNT] Deleted {analyses_result.deleted_count} analyses")
+        
+        # Delete all user's sessions
+        sessions_result = await db.sessions.delete_many({"user_id": user_id})
+        print(f"🗑️ [DELETE ACCOUNT] Deleted {sessions_result.deleted_count} sessions")
+        
+        # Delete user document
+        user_result = await db.users.delete_one({"user_id": user_id})
+        print(f"🗑️ [DELETE ACCOUNT] Deleted user account")
+        
+        # Delete local JSON history file if exists
+        try:
+            import os
+            from pathlib import Path
+            history_file = Path(f"data/{user_id}_history.json")
+            if history_file.exists():
+                os.remove(history_file)
+                print(f"🗑️ [DELETE ACCOUNT] Deleted local history file")
+        except Exception as e:
+            print(f"⚠️ [DELETE ACCOUNT] Could not delete local history: {e}")
+        
+        return {
+            "success": True,
+            "message": "Account and all data permanently deleted",
+            "user_id": user_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ [DELETE ACCOUNT] Failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete account: {str(e)}")
 
 @app.post("/auth/refresh", response_model=AuthResponse)
 async def refresh_access_token(refresh_token: str):
@@ -248,7 +319,7 @@ async def analyze_face(
             # Get historical data for trend analysis (skip for guest users)
             historical_data = []
             if user_id != "guest":
-                historical_data = historical_data_service.get_user_history(user_id, 30)
+                historical_data = await historical_data_service.get_user_history(user_id, 30)
                 print(f"📊 [HISTORICAL DATA] Retrieved {len(historical_data)} entries for user {user_id}")
             else:
                 print(f"👤 [HISTORICAL DATA] Skipping historical data for guest user")
@@ -271,21 +342,43 @@ async def analyze_face(
             print(f"⚠️ [API] Smart summary generation failed: {e}")
             # Continue without smart summary
         
-        # Save historical data for trend analysis
-        try:
-            historical_data = {
-                "user_id": analysis_result.user_id,
-                "date": analysis_result.date,
-                "sleep_score": analysis_result.sleep_score,
-                "skin_health_score": analysis_result.skin_health_score,
-                "features": analysis_result.features.model_dump(),
-                "routine": routine
-            }
-            historical_data_service.save_analysis_data(analysis_result.user_id, historical_data)
-            print(f"💾 [API] Historical data saved for trend analysis")
-        except Exception as e:
-            print(f"⚠️ [API] Failed to save historical data: {e}")
-            # Continue without saving historical data
+        # Save data ONLY for registered users (NOT for guests)
+        if user_id != "guest":
+            try:
+                # Save to MongoDB for persistent storage and historical analysis
+                db = await get_database()
+                mongo_data = {
+                    "user_id": analysis_result.user_id,
+                    "date": analysis_result.date,
+                    "sleep_score": analysis_result.sleep_score,
+                    "skin_health_score": analysis_result.skin_health_score,
+                    "features": analysis_result.features.model_dump(),
+                    "routine": routine,
+                    "confidence": analysis_result.confidence,
+                    "fun_label": analysis_result.fun_label,
+                    "smart_summary": smart_summary,
+                    "created_at": datetime.now()
+                }
+                from database import save_analysis
+                await save_analysis(db, mongo_data)
+                print(f"💾 [MONGODB] Analysis saved to database for registered user {analysis_result.user_id}")
+                
+                # Also save to local JSON for quick trend analysis
+                historical_data = {
+                    "user_id": analysis_result.user_id,
+                    "date": analysis_result.date,
+                    "sleep_score": analysis_result.sleep_score,
+                    "skin_health_score": analysis_result.skin_health_score,
+                    "features": analysis_result.features.model_dump(),
+                    "routine": routine
+                }
+                historical_data_service.save_analysis_data(analysis_result.user_id, historical_data)
+                print(f"💾 [LOCAL] Historical data cached locally for trend analysis")
+            except Exception as e:
+                print(f"⚠️ [STORAGE] Failed to save data for registered user: {e}")
+                # Continue without saving
+        else:
+            print(f"👤 [GUEST] Skipping data storage for guest user (no persistence)")
         
         print(f"✅ [API] Returning complete result")
         return analysis_result
@@ -327,17 +420,31 @@ async def analyze_face(
 @app.get("/user/{user_id}/history")
 async def get_user_history(
     user_id: str,
-    days: int = 7,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    days: int = 7
 ):
     """
     Get user's analysis history
+    Returns empty array for first-time users (not an error)
+    Works for both authenticated users and guest users
+    NO AUTHENTICATION REQUIRED - open endpoint
     """
     try:
-        # Verify token
-        await verify_token(credentials.credentials)
+        # No auth required for this endpoint
+        print(f"📊 [API] Fetching history for user {user_id} (no auth required)")
         
-        # Get database
+        print(f"📊 [API] Fetching {days}-day history for user {user_id}")
+        
+        # Guest users - return empty history from local storage hint
+        if user_id == "guest":
+            print(f"👤 [API] Guest user - returning empty history (check local storage)")
+            return {
+                "history": [],
+                "is_first_time": True,
+                "is_guest": True,
+                "message": "Guest users - history stored locally on device only"
+            }
+        
+        # Get database for registered users
         db = await get_database()
         
         # Query user history
@@ -351,10 +458,29 @@ async def get_user_history(
             doc["_id"] = str(doc["_id"])
             history.append(doc)
         
-        return {"history": history}
+        # First-time users will have empty history - this is normal!
+        if len(history) == 0:
+            print(f"✅ [API] No history yet for user {user_id} (new user)")
+        else:
+            print(f"✅ [API] Found {len(history)} historical entries for user {user_id}")
+        
+        return {
+            "history": history,
+            "is_first_time": len(history) == 0,
+            "is_guest": False,
+            "message": "Take your first selfie to start tracking!" if len(history) == 0 else f"Found {len(history)} entries"
+        }
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch history: {str(e)}")
+        print(f"⚠️ [API] History fetch error: {str(e)}")
+        # Return empty history instead of error for first-time users
+        return {
+            "history": [],
+            "is_first_time": True,
+            "is_guest": user_id == "guest",
+            "message": "No history available yet - take your first selfie!",
+            "error": str(e)
+        }
 
 @app.get("/user/{user_id}/summary")
 async def get_daily_summary(
@@ -374,7 +500,7 @@ async def get_daily_summary(
         # Get historical data for ultra-smart analysis (skip for guest users)
         historical_data = []
         if user_id != "guest":
-            historical_data = historical_data_service.get_user_history(user_id, 30)
+            historical_data = await historical_data_service.get_user_history(user_id, 30)
             print(f"📊 [HISTORICAL DATA] Retrieved {len(historical_data)} entries for user {user_id}")
         else:
             print(f"👤 [HISTORICAL DATA] Skipping historical data for guest user")
@@ -534,7 +660,7 @@ async def get_trend_analysis(
         print(f"📊 [API] Getting trend analysis for user: {user_id}, days: {days}")
         
         # Get historical data
-        historical_data = historical_data_service.get_user_history(user_id, days)
+        historical_data = await historical_data_service.get_user_history(user_id, days)
         
         if not historical_data:
             return {
@@ -566,7 +692,7 @@ async def get_product_effectiveness(
         print(f"🔍 [API] Getting product effectiveness for user: {user_id}, product: {product_id}")
         
         # Get historical data
-        historical_data = historical_data_service.get_user_history(user_id, days)
+        historical_data = await historical_data_service.get_user_history(user_id, days)
         
         if not historical_data:
             return {
@@ -610,7 +736,7 @@ async def get_routine_insights(
         print(f"💡 [API] Getting routine insights for user: {user_id}, days: {days}")
         
         # Get historical data
-        historical_data = historical_data_service.get_user_history(user_id, days)
+        historical_data = await historical_data_service.get_user_history(user_id, days)
         
         if not historical_data:
             return {
@@ -664,7 +790,7 @@ async def get_smart_analysis(
         print(f"🧠 [API] Getting smart analysis for user: {user_id}, days: {days}")
         
         # Get historical data
-        historical_data = historical_data_service.get_user_history(user_id, days)
+        historical_data = await historical_data_service.get_user_history(user_id, days)
         
         if not historical_data:
             return {
@@ -696,7 +822,7 @@ async def get_feature_improvements(
         print(f"📊 [API] Getting feature improvements for user: {user_id}, feature: {feature}")
         
         # Get historical data
-        historical_data = historical_data_service.get_user_history(user_id, days)
+        historical_data = await historical_data_service.get_user_history(user_id, days)
         
         if not historical_data:
             return {
@@ -741,7 +867,7 @@ async def get_detailed_product_effectiveness(
         print(f"🔍 [API] Getting detailed product effectiveness for user: {user_id}, product: {product_id}")
         
         # Get historical data
-        historical_data = historical_data_service.get_user_history(user_id, days)
+        historical_data = await historical_data_service.get_user_history(user_id, days)
         
         if not historical_data:
             return {

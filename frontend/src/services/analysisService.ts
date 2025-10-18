@@ -59,11 +59,12 @@ class AnalysisService {
     }
   }
 
-  async analyzeImage(imageUri: string, routineData?: any): Promise<AnalysisResult> {
+  async analyzeImage(imageUri: string, routineData?: any, userId?: string): Promise<AnalysisResult> {
     try {
       console.log('🔄 Starting image analysis...');
       console.log('📸 Image URI:', imageUri);
       console.log('📋 Routine data:', routineData);
+      console.log('👤 User ID:', userId || 'guest');
 
       // Compress image for faster upload
       console.log('🖼️ Compressing image for faster upload...');
@@ -88,6 +89,7 @@ class AnalysisService {
       };
       
       formData.append('file', file as any);
+      formData.append('user_id', userId || 'guest');  // ✅ FIX: Send user_id to backend!
       
       if (routineData) {
         formData.append('routine_data', JSON.stringify(routineData));

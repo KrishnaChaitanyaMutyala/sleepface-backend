@@ -10,6 +10,14 @@ export interface User {
   lastActive: Date;
 }
 
+export interface RoutineData {
+  sleep_hours?: number;
+  water_intake?: number;
+  product_used?: string; // Keep for backward compatibility
+  skincare_products?: string[]; // New array for multiple products
+  daily_note?: string;
+}
+
 export interface AnalysisResult {
   user_id: string;
   date: string;
@@ -23,12 +31,7 @@ export interface AnalysisResult {
     wrinkles: number;
     texture: number;
   };
-  routine?: {
-    sleep_hours?: number;
-    water_intake?: number;
-    product_used?: string;
-    daily_note?: string;
-  };
+  routine?: RoutineData;
   fun_label: string;
   confidence: number;
   smart_summary?: {
@@ -44,6 +47,9 @@ export interface DailySummary {
   skin_health_change?: number;
   key_insights: string[];
   recommendations: string[];
+  natural_remedies?: string[];
+  product_recommendations?: string[];
+  lifestyle_tip?: string;
 }
 
 export interface WeeklySummary {
@@ -53,14 +59,6 @@ export interface WeeklySummary {
   score_trend: 'improving' | 'declining' | 'stable';
   lifestyle_insights: string[];
   routine_effectiveness: string[];
-}
-
-export interface RoutineData {
-  sleep_hours?: number;
-  water_intake?: number;
-  product_used?: string; // Keep for backward compatibility
-  skincare_products?: string[]; // New array for multiple products
-  daily_note?: string;
 }
 
 export interface SkincareProduct {

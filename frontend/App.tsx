@@ -27,10 +27,12 @@ const Stack = createStackNavigator();
 
 function MainTabs() {
   const { isDark } = useTheme();
+  const { isGuest } = useAuth();
   const colors = getThemeColors(isDark);
   
   return (
     <Tab.Navigator
+      initialRouteName={isGuest ? "Camera" : "Insights"}
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: keyof typeof Ionicons.glyphMap;

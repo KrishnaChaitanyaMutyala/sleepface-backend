@@ -906,7 +906,7 @@ class GrokProvider(BaseLLMProvider):
     
     def __init__(self):
         self.api_key = os.getenv('XAI_API_KEY')  # xAI API key
-        self.model = "grok-beta"  # Correct Grok model name
+        self.model = "grok-2-latest"  # Updated model (grok-beta deprecated)
     
     def is_available(self) -> bool:
         return self.api_key is not None
@@ -1045,20 +1045,58 @@ class OpenAIFreeProvider(BaseLLMProvider):
     
     def __init__(self):
         self.api_key = os.getenv('OPENAI_API_KEY')
-        self.model = "gpt-4o-mini"  # CHEAPEST! Real model name
+        self.model = "gpt-4o-mini"  # Default model
+        # Allow override from environment variable
+        if os.getenv('OPENAI_MODEL'):
+            self.model = os.getenv('OPENAI_MODEL')
     
     def is_available(self) -> bool:
         return self.api_key is not None
     
     async def generate_summary(self, context: str, analysis_data: Dict) -> Dict[str, Any]:
-        """Generate summary using OpenAI API - TOKEN OPTIMIZED for cost efficiency"""
+        """Generate summary using OpenAI API - Dermatologist-grade recommendations"""
         try:
             import httpx
             
-            # Use the ultra-concise prompt to minimize tokens (2-liner format)
-            prompt = self._create_concise_prompt(context, analysis_data)
+            # Create engaging prompt for quality recommendations
+            features = analysis_data.get('features', {})
+            sleep_score = analysis_data.get('sleep_score', 0)
+            skin_score = analysis_data.get('skin_health_score', 0)
             
-            async with httpx.AsyncClient(timeout=2.0) as client:  # 2 second timeout for speed
+            # Find lowest 2 features
+            sorted_features = sorted(features.items(), key=lambda x: x[1])[:2]
+            area1 = sorted_features[0][0].replace('_', ' ')
+            area2 = sorted_features[1][0].replace('_', ' ')
+            
+            # Add variation to prevent repetition
+            import random
+            import time
+            variation_seed = random.randint(1, 9999) + int(time.time() % 1000)
+            
+            prompt = f"""SKINCARE EXPERT #{variation_seed}
+
+Target areas: {area1} and {area2}.
+
+STRICTLY FORBIDDEN (DO NOT MENTION):
+- Sleep advice
+- Water/hydration
+- Food/diet/nutrition
+- Exercise
+- Stress management
+
+REQUIRED: Give EXACTLY 4 skincare recommendations in TWO SECTIONS:
+
+NATURAL REMEDIES:
+1. Natural/DIY remedy for {area1} (e.g., "Apply cold cucumber slices for 15 minutes")
+2. Natural/DIY remedy for {area2} (e.g., "Massage with rosehip oil before bed")
+
+PRODUCTS:
+3. Skincare product for {area1} with specific ingredient and % (e.g., "Use niacinamide 10% serum twice daily")
+4. Skincare product for {area2} with specific ingredient and % (e.g., "Apply caffeine 5% eye cream morning")
+
+Be CREATIVE and SPECIFIC. No generic advice. Include exact ingredients, percentages, application times, and techniques. Write each as one sentence on a NEW LINE. Keep section headers."""
+            
+            async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(
                     "https://api.openai.com/v1/chat/completions",
                     headers={
@@ -1068,33 +1106,78 @@ class OpenAIFreeProvider(BaseLLMProvider):
                     json={
                         "model": self.model,
                         "messages": [
-                            {"role": "system", "content": "Concise skincare advisor. 2 lines max."},
                             {"role": "user", "content": prompt}
                         ],
-                        "max_tokens": 80,  # Reduced to 80 for SPEED (2 short lines only)
-                        "temperature": 0.2  # Lower for faster, focused responses
+                        "max_completion_tokens": 400  # 4 specific recommendations with details
                     }
                 )
                 
                 if response.status_code == 200:
                     result = response.json()
-                    content = result['choices'][0]['message']['content'].strip()
                     
-                    # Parse 2-liner response
+                    content = result['choices'][0]['message']['content']
+                    if content is None:
+                        content = ""
+                    content = content.strip()
+                    
+                    tokens_used = result.get('usage', {}).get('total_tokens', 0)
+                    print(f"✅ OpenAI: {tokens_used} tokens, {len(content)} chars")
+                    
+                    # Parse recommendations - split into natural remedies and products
                     lines = [line.strip() for line in content.split('\n') if line.strip()]
-                    daily_summary = lines[0] if len(lines) > 0 else "Analysis complete."
-                    recommendation = lines[1] if len(lines) > 1 else "Continue your routine."
+                    
+                    natural_remedies = []
+                    product_recommendations = []
+                    current_section = None
+                    
+                    for line in lines:
+                        # Detect section headers
+                        line_upper = line.upper()
+                        if 'NATURAL' in line_upper and 'REMED' in line_upper:
+                            current_section = 'natural'
+                            continue
+                        elif 'PRODUCT' in line_upper:
+                            current_section = 'products'
+                            continue
+                        
+                        # Skip empty lines
+                        if not line:
+                            continue
+                            
+                        # Remove numbering/bullets if present
+                        clean_line = line.lstrip('0123456789.-•) ').strip()
+                        # Remove markdown formatting
+                        clean_line = clean_line.replace('**', '').replace('*', '').replace('__', '').replace('_', '')
+                        # Remove colon-based headers
+                        if ':' in clean_line:
+                            parts = clean_line.split(':', 1)
+                            if len(parts) == 2 and len(parts[0].split()) <= 4:
+                                clean_line = parts[1].strip()
+                        
+                        # Add to appropriate section
+                        if clean_line and len(clean_line) > 15:  # Must be substantial
+                            if current_section == 'natural':
+                                natural_remedies.append(clean_line)
+                            elif current_section == 'products':
+                                product_recommendations.append(clean_line)
+                    
+                    # Combine for backwards compatibility (natural first, then products)
+                    recommendations = natural_remedies + product_recommendations
                     
                     return {
-                        "daily_summary": daily_summary,
-                        "key_insights": [daily_summary],
-                        "recommendations": [recommendation],
-                        "model": "OpenAI GPT-5 Nano",
+                        "daily_summary": f"Sleep: {sleep_score}/100, Skin: {skin_score}/100. Focus: {area1}, {area2}.",
+                        "key_insights": recommendations[:3],
+                        "recommendations": recommendations[:4],  # Max 4 recommendations (for backwards compatibility)
+                        "natural_remedies": natural_remedies[:2],  # Separate natural remedies
+                        "product_recommendations": product_recommendations[:2],  # Separate product recommendations
+                        "model": f"OpenAI {self.model}",
                         "provider": "openai",
-                        "tokens_used": result.get('usage', {}).get('total_tokens', 0)
+                        "tokens_used": tokens_used
                     }
                 else:
+                    error_detail = response.text
                     print(f"OpenAI API error: {response.status_code}")
+                    print(f"OpenAI error details: {error_detail}")
                     return None
                     
         except Exception as e:

@@ -1188,19 +1188,19 @@ class Core5Engine:
         return 0  # No clear correlation pattern
     
     def _generate_fun_label(self, sleep_score: int, skin_health_score: int) -> str:
-        """Generate fun label based on scores"""
+        """Generate status label based on scores - frontend will map to custom icons"""
         avg_score = (sleep_score + skin_health_score) / 2
         
         if avg_score >= 80:
-            return "Glow Queen 👑"
+            return "excellent"
         elif avg_score >= 70:
-            return "Glow Up 🌟"
+            return "good"
         elif avg_score >= 50:
-            return "Getting There 💪"
+            return "fair"
         elif avg_score >= 30:
-            return "Needs Care ⚠️"
+            return "needs_care"
         else:
-            return "Focus Time 🎯"
+            return "poor"
     
     async def generate_daily_summary(self, today_data: Optional[Dict], yesterday_data: Optional[Dict]) -> DailySummary:
         """Enhanced daily summary with better recommendations for all 6 features"""

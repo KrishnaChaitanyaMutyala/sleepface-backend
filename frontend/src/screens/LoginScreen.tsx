@@ -7,53 +7,170 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
+  Animated,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import CustomIcon from '../components/CustomIcon';
-import { Colors, Typography, Spacing, BorderRadius, Shadows, Gradients } from '../design/DesignSystem';
+import { Colors, Typography, getThemeColors } from '../design/DesignSystem';
+import { useTheme } from '../contexts/ThemeContext';
 
+// ============================================================================
+// ANIMATED INPUT FIELD
+// ============================================================================
+const AnimatedInput: React.FC<{
+  icon: string;
+  placeholder: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  secureTextEntry?: boolean;
+  keyboardType?: any;
+  autoCapitalize?: any;
+  showPasswordToggle?: boolean;
+  onTogglePassword?: () => void;
+}> = ({
+  icon,
+  placeholder,
+  value,
+  onChangeText,
+  secureTextEntry,
+  keyboardType,
+  autoCapitalize,
+  showPasswordToggle,
+  onTogglePassword,
+}) => {
+  const [isFocused, setIsFocused] = useState(false);
+  const focusAnim = React.useRef(new Animated.Value(0)).current;
+
+  const handleFocus = () => {
+    setIsFocused(true);
+    Animated.spring(focusAnim, {
+      toValue: 1,
+      useNativeDriver: false,
+      tension: 50,
+      friction: 7,
+    }).start();
+  };
+
+  const handleBlur = () => {
+    setIsFocused(false);
+    Animated.spring(focusAnim, {
+      toValue: 0,
+      useNativeDriver: false,
+      tension: 50,
+      friction: 7,
+    }).start();
+  };
+
+  const borderColor = focusAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['rgba(255,255,255,0.2)', Colors.primary],
+  });
+
+  return (
+    <Animated.View
+      style={[
+        styles.inputContainer,
+        { borderColor, borderWidth: 2 },
+      ]}
+    >
+      <View style={[styles.inputIcon, isFocused && { backgroundColor: Colors.primary + '15' }]}>
+        <CustomIcon name={icon} size={20} color={isFocused ? Colors.primary : '#9CA3AF'} />
+      </View>
+      <TextInput
+        style={styles.input}
+        placeholder={placeholder}
+        placeholderTextColor="#6B7280"
+        value={value}
+        onChangeText={onChangeText}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        secureTextEntry={secureTextEntry}
+        keyboardType={keyboardType}
+        autoCapitalize={autoCapitalize}
+        autoCorrect={false}
+      />
+      {showPasswordToggle && (
+        <TouchableOpacity style={styles.eyeButton} onPress={onTogglePassword}>
+          <CustomIcon
+            name={secureTextEntry ? 'eye-off' : 'eye'}
+            size={20}
+            color="#9CA3AF"
+          />
+        </TouchableOpacity>
+      )}
+    </Animated.View>
+  );
+};
+
+// ============================================================================
+// MAIN LOGIN SCREEN
+// ============================================================================
 const LoginScreen: React.FC = () => {
   const navigation = useNavigation();
   const { login, loginAsGuest, isLoading } = useAuth();
+  const { isDark } = useTheme();
+  const colors = getThemeColors(isDark);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  const slideAnim = React.useRef(new Animated.Value(50)).current;
+
+  React.useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: 50,
+        friction: 7,
+      }),
+    ]).start();
+  }, []);
+
+  const isValidEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please fill in all fields');
+      Alert.alert('Missing Information', 'Please fill in all fields');
       return;
     }
 
     if (!isValidEmail(email)) {
-      Alert.alert('Error', 'Please enter a valid email address');
+      Alert.alert('Invalid Email', 'Please enter a valid email address');
       return;
     }
 
     try {
       await login(email, password);
-      navigation.goBack();
+      // Navigate to Home instead of goBack to avoid navigation errors
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Home' as never }],
+      });
     } catch (error: any) {
-      const errorMessage = error?.message || 'Login failed. Please check your credentials and try again.';
-      Alert.alert('Login Failed', errorMessage);
+      Alert.alert('Login Failed', error?.message || 'Please check your credentials and try again.');
     }
-  };
-
-  const handleRegister = () => {
-    navigation.navigate('Register' as never);
   };
 
   const handleGuestLogin = async () => {
     try {
       await loginAsGuest();
+      // Guest login will automatically navigate to MainTabs
+      // Camera welcome modal will appear automatically for first-time guests
     } catch (error: any) {
-      const errorMessage = error?.message || 'Failed to continue as guest. Please try again.';
-      Alert.alert('Error', errorMessage);
+      Alert.alert('Error', error?.message || 'Failed to continue as guest. Please try again.');
     }
   };
 
@@ -61,175 +178,165 @@ const LoginScreen: React.FC = () => {
     Alert.alert('Forgot Password', 'Password reset functionality coming soon!');
   };
 
-  const isValidEmail = (email: string) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-  };
-
   return (
     <LinearGradient
-      colors={['#F2F2F7', '#FFFFFF', '#F2F2F7']}
+      colors={[colors.background, colors.surfaceSecondary, colors.background]}
       style={styles.container}
     >
-      <ScrollView 
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardView}
       >
-          {/* Floating Glass Card */}
-          <LinearGradient
-            colors={['rgba(102, 126, 234, 0.1)', 'rgba(118, 75, 162, 0.1)', 'rgba(240, 147, 251, 0.1)']}
-            style={styles.glassCard}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Animated.View
+            style={[
+              styles.content,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}
           >
             {/* Logo Section */}
             <View style={styles.logoSection}>
               <View style={styles.logoContainer}>
-                <View style={styles.logoIcon}>
-                                      <CustomIcon name="analytics" size={32} color="#FFFFFF" />
-                </View>
+                <LinearGradient
+                  colors={[Colors.primary, Colors.accent]}
+                  style={styles.logoGradient}
+                >
+                  <CustomIcon name="zap" size={40} color="#FFFFFF" />
+                </LinearGradient>
               </View>
-              <Text style={styles.logoText}>HappyFace</Text>
-              <Text style={styles.logoSubtext}>Welcome back! Sign in to continue your journey</Text>
+              
+              <Text style={styles.appName}>HappyFace</Text>
+              <Text style={styles.tagline}>Track your wellness journey</Text>
             </View>
 
-            {/* Form Section */}
+            {/* Welcome Back */}
+            <View style={styles.welcomeSection}>
+              <Text style={styles.welcomeTitle}>Welcome Back</Text>
+              <Text style={styles.welcomeSubtitle}>
+                Sign in to continue your skin and sleep tracking
+              </Text>
+            </View>
+
+            {/* Form */}
             <View style={styles.formSection}>
-              {/* Email Input */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Email Address</Text>
-                <View style={styles.inputContainer}>
-                  <View style={styles.iconContainer}>
-                    <CustomIcon name="email" size={18} color="#666666" />
-                  </View>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="Enter your email"
-                    placeholderTextColor="#999999"
-                    value={email}
-                    onChangeText={setEmail}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                </View>
-              </View>
+              <AnimatedInput
+                icon="mail"
+                placeholder="Email address"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
 
-              {/* Password Input */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Password</Text>
-                <View style={styles.inputContainer}>
-                  <View style={styles.iconContainer}>
-                    <CustomIcon name="lock" size={18} color="#666666" />
-                  </View>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="Enter your password"
-                    placeholderTextColor="#999999"
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!showPassword}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                  <TouchableOpacity
-                    style={styles.eyeButton}
-                    onPress={() => setShowPassword(!showPassword)}
-                  >
-                    <CustomIcon 
-                      name={showPassword ? "eyeOff" : "eye"} 
-                      size={18} 
-                      color="#666666" 
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
+              <AnimatedInput
+                icon="lock"
+                placeholder="Password"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                showPasswordToggle
+                onTogglePassword={() => setShowPassword(!showPassword)}
+                autoCapitalize="none"
+              />
 
-              {/* Forgot Password */}
-              <TouchableOpacity 
-                style={styles.forgotPasswordButton}
+              <TouchableOpacity
+                style={styles.forgotButton}
                 onPress={handleForgotPassword}
               >
-                <Text style={styles.forgotPasswordText}>Forgot your password?</Text>
+                <Text style={styles.forgotText}>Forgot password?</Text>
               </TouchableOpacity>
 
               {/* Login Button */}
               <TouchableOpacity
-                style={[styles.primaryButton, isLoading && styles.buttonDisabled]}
+                style={styles.loginButton}
                 onPress={handleLogin}
                 disabled={isLoading}
+                activeOpacity={0.9}
               >
                 <LinearGradient
-                  colors={isLoading ? ['rgba(255,255,255,0.2)', 'rgba(255,255,255,0.1)'] : ['#FF6B6B', '#FF8E53']}
-                  style={styles.buttonGradient}
+                  colors={[Colors.primary, Colors.accent]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
+                  style={styles.loginGradient}
                 >
-                  <Text style={styles.primaryButtonText}>
-                    {isLoading ? 'Signing In...' : 'Sign In'}
-                  </Text>
+                  {isLoading ? (
+                    <Text style={styles.loginButtonText}>Signing in...</Text>
+                  ) : (
+                    <>
+                      <CustomIcon name="log-in" size={20} color="#FFFFFF" />
+                      <Text style={styles.loginButtonText}>Sign In</Text>
+                    </>
+                  )}
                 </LinearGradient>
               </TouchableOpacity>
             </View>
 
             {/* Divider */}
             <View style={styles.dividerSection}>
-              <View style={styles.divider}>
-                <View style={styles.dividerLine} />
-                <View style={styles.dividerTextContainer}>
-                  <Text style={styles.dividerText}>or continue with</Text>
-                </View>
-                <View style={styles.dividerLine} />
-              </View>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or continue with</Text>
+              <View style={styles.dividerLine} />
             </View>
 
             {/* Social Buttons */}
             <View style={styles.socialSection}>
-              <View style={styles.socialRow}>
-                <TouchableOpacity style={styles.socialButton}>
-                  <View style={styles.socialIconContainer}>
-                    <CustomIcon name="google" size={20} color="#FFFFFF" />
-                  </View>
-                  <Text style={styles.socialButtonText}>Google</Text>
-                </TouchableOpacity>
+              <TouchableOpacity style={styles.socialButton}>
+                <View style={[styles.socialIcon, { backgroundColor: '#DB4437' }]}>
+                  <CustomIcon name="logo-google" size={20} color="#FFFFFF" />
+                </View>
+                <Text style={styles.socialText}>Google</Text>
+              </TouchableOpacity>
 
-                <TouchableOpacity style={styles.socialButton}>
-                  <View style={styles.socialIconContainer}>
-                    <CustomIcon name="apple" size={20} color="#FFFFFF" />
-                  </View>
-                  <Text style={styles.socialButtonText}>Apple</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Guest Button */}
-              <TouchableOpacity 
-                style={[styles.guestButton, isLoading && styles.buttonDisabled]}
-                onPress={handleGuestLogin}
-                disabled={isLoading}
-              >
-                <CustomIcon name="profile" size={18} color="rgba(255, 255, 255, 0.8)" />
-                <Text style={styles.guestButtonText}>
-                  {isLoading ? 'Loading...' : 'Continue as Guest'}
-                </Text>
+              <TouchableOpacity style={styles.socialButton}>
+                <View style={[styles.socialIcon, { backgroundColor: '#000000' }]}>
+                  <CustomIcon name="logo-apple" size={20} color="#FFFFFF" />
+                </View>
+                <Text style={styles.socialText}>Apple</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Guest Login */}
+            <TouchableOpacity
+              style={styles.guestButton}
+              onPress={handleGuestLogin}
+              disabled={isLoading}
+            >
+              <CustomIcon name="user" size={18} color="#9CA3AF" />
+              <Text style={styles.guestText}>
+                {isLoading ? 'Loading...' : 'Continue as Guest'}
+              </Text>
+            </TouchableOpacity>
 
             {/* Footer */}
             <View style={styles.footer}>
               <Text style={styles.footerText}>Don't have an account? </Text>
-              <TouchableOpacity onPress={handleRegister}>
+              <TouchableOpacity onPress={() => navigation.navigate('Register' as never)}>
                 <Text style={styles.footerLink}>Sign Up</Text>
               </TouchableOpacity>
             </View>
-          </LinearGradient>
+          </Animated.View>
         </ScrollView>
+      </KeyboardAvoidingView>
     </LinearGradient>
   );
 };
 
+// ============================================================================
+// STYLES
+// ============================================================================
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  keyboardView: {
     flex: 1,
   },
   scrollView: {
@@ -237,178 +344,147 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
-    paddingTop: 60, // Account for status bar and notch area
+    paddingTop: 60,
     paddingBottom: 40,
   },
-  
-  // Glass Card
-  glassCard: {
-    marginHorizontal: 24,
-    borderRadius: 24,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 20,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 25,
-    elevation: 25,
+  content: {
+    paddingHorizontal: 24,
   },
-
+  
   // Logo Section
   logoSection: {
     alignItems: 'center',
-    paddingTop: 40,
-    paddingBottom: 32,
-    paddingHorizontal: 32,
+    marginBottom: 40,
   },
   logoContainer: {
-    marginBottom: 16,
-  },
-  logoIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#007AFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#007AFF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  logoText: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#1C1C1E',
-    marginBottom: 8,
-    fontFamily: Typography.fontFamily.primary,
-  },
-  logoSubtext: {
-    fontSize: 15,
-    color: '#666666',
-    textAlign: 'center',
-    lineHeight: 22,
-    fontFamily: Typography.fontFamily.secondary,
-  },
-
-  // Form Section
-  formSection: {
-    paddingHorizontal: 32,
-    paddingBottom: 24,
-  },
-  inputGroup: {
     marginBottom: 20,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 10,
   },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1C1C1E',
+  logoGradient: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 4,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  appName: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#FFFFFF',
     marginBottom: 8,
-    marginLeft: 4,
-    fontFamily: Typography.fontFamily.primary,
+  },
+  tagline: {
+    fontSize: 15,
+    color: '#9CA3AF',
+    fontWeight: '500',
+  },
+  
+  // Welcome Section
+  welcomeSection: {
+    marginBottom: 32,
+  },
+  welcomeTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 8,
+  },
+  welcomeSubtitle: {
+    fontSize: 15,
+    color: '#9CA3AF',
+    lineHeight: 22,
+  },
+  
+  // Form
+  formSection: {
+    marginBottom: 24,
+    gap: 16,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: '#1F2937',
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
     paddingHorizontal: 16,
     paddingVertical: 16,
-    shadowColor: 'rgba(0, 0, 0, 0.1)',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 4,
   },
-  iconContainer: {
+  inputIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#374151',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginRight: 12,
   },
-  textInput: {
+  input: {
     flex: 1,
     fontSize: 16,
-    color: '#1C1C1E',
-    fontFamily: Typography.fontFamily.primary,
+    color: '#FFFFFF',
   },
   eyeButton: {
-    padding: 4,
-    marginLeft: 8,
+    padding: 8,
   },
-  forgotPasswordButton: {
+  forgotButton: {
     alignSelf: 'flex-end',
-    marginBottom: 24,
-    marginTop: 4,
+    marginTop: -8,
   },
-  forgotPasswordText: {
+  forgotText: {
     fontSize: 14,
-    color: '#007AFF',
-    fontWeight: '500',
-    fontFamily: Typography.fontFamily.primary,
+    color: Colors.primary,
+    fontWeight: '600',
   },
-
-  // Buttons
-  primaryButton: {
+  
+  // Login Button
+  loginButton: {
     borderRadius: 16,
     overflow: 'hidden',
-    shadowColor: '#FF6B6B',
+    marginTop: 8,
+    shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.4,
     shadowRadius: 16,
-    elevation: 8,
+    elevation: 10,
   },
-  buttonGradient: {
-    paddingVertical: 18,
+  loginGradient: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 18,
+    gap: 10,
   },
-  primaryButtonText: {
+  loginButtonText: {
     fontSize: 17,
     fontWeight: '700',
     color: '#FFFFFF',
-    fontFamily: Typography.fontFamily.primary,
   },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-
-  // Divider Section
+  
+  // Divider
   dividerSection: {
-    paddingHorizontal: 32,
-    paddingVertical: 20,
-  },
-  divider: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginVertical: 32,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.1)',
-  },
-  dividerTextContainer: {
-    paddingHorizontal: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: 12,
-    paddingVertical: 6,
+    backgroundColor: '#374151',
   },
   dividerText: {
     fontSize: 13,
-    color: '#666666',
-    fontFamily: Typography.fontFamily.secondary,
+    color: '#6B7280',
+    paddingHorizontal: 16,
     fontWeight: '500',
   },
-
-  // Social Section
+  
+  // Social
   socialSection: {
-    paddingHorizontal: 32,
-    paddingBottom: 24,
-  },
-  socialRow: {
     flexDirection: 'row',
     gap: 12,
     marginBottom: 16,
@@ -418,61 +494,59 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    paddingVertical: 14,
-    borderRadius: 14,
+    backgroundColor: '#1F2937',
+    paddingVertical: 16,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: '#374151',
+    gap: 10,
   },
-  socialIconContainer: {
-    marginRight: 8,
+  socialIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  socialButtonText: {
+  socialText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#1C1C1E',
-    fontFamily: Typography.fontFamily.primary,
+    color: '#F3F4F6',
   },
+  
+  // Guest
   guestButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    paddingVertical: 14,
-    borderRadius: 14,
+    backgroundColor: '#1F2937',
+    paddingVertical: 16,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-    gap: 8,
+    borderColor: '#374151',
+    gap: 10,
   },
-  guestButtonText: {
+  guestText: {
     fontSize: 15,
-    fontWeight: '500',
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontFamily: Typography.fontFamily.primary,
+    fontWeight: '600',
+    color: '#9CA3AF',
   },
-
+  
   // Footer
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 32,
-    paddingBottom: 32,
-    paddingTop: 8,
+    marginTop: 32,
   },
   footerText: {
     fontSize: 15,
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontFamily: Typography.fontFamily.secondary,
+    color: '#9CA3AF',
   },
   footerLink: {
     fontSize: 15,
-    color: '#FFFFFF',
-    fontWeight: '600',
-    fontFamily: Typography.fontFamily.primary,
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+    color: Colors.primary,
+    fontWeight: '700',
   },
 });
 

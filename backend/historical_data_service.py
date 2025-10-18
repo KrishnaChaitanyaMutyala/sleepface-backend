@@ -8,6 +8,11 @@ class HistoricalDataService:
     def __init__(self, data_dir: str = "data"):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(exist_ok=True)
+        self.db = None  # Will be set by main.py
+    
+    def set_database(self, db):
+        """Set MongoDB database instance for registered user data retrieval"""
+        self.db = db
         
     def save_analysis_data(self, user_id: str, analysis_data: Dict[str, Any]) -> bool:
         """Save analysis data to historical storage"""
@@ -42,12 +47,52 @@ class HistoricalDataService:
             print(f"❌ [HISTORICAL DATA] Error saving data: {e}")
             return False
     
-    def get_user_history(self, user_id: str, days: int = 30) -> List[Dict[str, Any]]:
-        """Get user's historical data for the specified number of days"""
+    async def get_user_history(self, user_id: str, days: int = 30) -> List[Dict[str, Any]]:
+        """Get user's historical data for the specified number of days
+        
+        For registered users: Retrieves from MongoDB (persistent storage)
+        For guest users: Retrieves from local JSON (temporary cache)
+        """
         try:
+            # For registered users, retrieve from MongoDB
+            if user_id != "guest" and not user_id.startswith("guest_") and self.db is not None:
+                try:
+                    from database import get_user_analyses
+                    
+                    # Get analyses from MongoDB
+                    analyses = await get_user_analyses(self.db, user_id, limit=days)
+                    
+                    # Convert MongoDB documents to the format expected by analysis
+                    historical_data = []
+                    for analysis in analyses:
+                        historical_data.append({
+                            'date': analysis.get('date'),
+                            'sleep_score': analysis.get('sleep_score'),
+                            'skin_health_score': analysis.get('skin_health_score'),
+                            'features': analysis.get('features', {}),
+                            'routine': analysis.get('routine', {}),
+                            'timestamp': analysis.get('created_at', datetime.now()).isoformat() if isinstance(analysis.get('created_at'), datetime) else str(analysis.get('created_at', datetime.now().isoformat()))
+                        })
+                    
+                    # Filter by date range
+                    cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()[:10]
+                    filtered_data = [
+                        entry for entry in historical_data 
+                        if entry.get('date', '') >= cutoff_date
+                    ]
+                    
+                    print(f"📊 [MONGODB] Retrieved {len(filtered_data)} entries for registered user {user_id}")
+                    return filtered_data
+                    
+                except Exception as mongo_error:
+                    print(f"⚠️ [MONGODB] Error retrieving from MongoDB: {mongo_error}, falling back to local JSON")
+                    # Fall through to local JSON as backup
+            
+            # For guest users or fallback, use local JSON files
             user_file = self.data_dir / f"{user_id}_history.json"
             
             if not user_file.exists():
+                print(f"📊 [LOCAL JSON] No historical data file found for user {user_id}")
                 return []
             
             with open(user_file, 'r') as f:
@@ -60,7 +105,7 @@ class HistoricalDataService:
                 if entry.get('date', '') >= cutoff_date
             ]
             
-            print(f"📊 [HISTORICAL DATA] Retrieved {len(filtered_data)} entries for user {user_id}")
+            print(f"📊 [LOCAL JSON] Retrieved {len(filtered_data)} entries for user {user_id}")
             return filtered_data
             
         except Exception as e:

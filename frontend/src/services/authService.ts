@@ -178,6 +178,26 @@ class AuthService {
       return null;
     }
   }
+
+  // Delete user account permanently
+  async deleteAccount(token: string): Promise<{ success: boolean; message: string }> {
+    try {
+      console.log('🗑️ Requesting account deletion...');
+      const response = await this.makeRequest<{ success: boolean; message: string; user_id: string }>(
+        '/auth/delete-account',
+        'DELETE',
+        null,
+        {
+          'Authorization': `Bearer ${token}`
+        }
+      );
+      console.log('✅ Account deleted successfully');
+      return response;
+    } catch (error) {
+      console.error('❌ Error deleting account:', error);
+      throw error;
+    }
+  }
 }
 
 export const authService = new AuthService();
